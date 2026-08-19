@@ -1,0 +1,597 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>迷宮大逃殺</title>
+<!-- 引入 PeerJS 免費連線庫 -->
+<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+<style>
+    :root { --cell-size: 32px; }
+    * { box-sizing: border-box; }
+    body { 
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+        background-color: #121212; color: #fff; margin: 0; padding: 0; 
+        user-select: none; overflow: hidden; height: 100vh; width: 100vw;
+        display: flex; justify-content: center; align-items: center;
+    }
+    #app { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
+    .screen { 
+        display: none; width: 100%; max-width: 650px; background: #1e272e; 
+        padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.7); text-align: center;
+    }
+    .screen.active { display: block; }
+    #screen-game.active { display: flex; max-width: 900px; flex-direction: row; gap: 20px; align-items: flex-start; }
+    
+    h1 { color: #f39c12; margin: 0 0 15px 0; font-size: 32px; }
+    h2 { margin: 0 0 15px 0; color: #f39c12; }
+    p.subtitle { color: #a4b0be; font-size: 15px; margin-bottom: 25px; }
+    
+    button { background: #e74c3c; color: white; border: none; padding: 12px 28px; font-size: 18px; border-radius: 8px; cursor: pointer; margin-top: 15px; font-weight: bold; transition: 0.2s;}
+    button:hover { background: #c0392b; transform: scale(1.05); }
+    button:disabled { background: #7f8c8d; cursor: not-allowed; transform: none; }
+
+    .lobby-box { background: #2f3640; padding: 20px; border-radius: 8px; margin: 15px 0; text-align: left; }
+    .room-id-display { font-size: 24px; font-weight: bold; color: #f1c40f; letter-spacing: 2px; user-select: all; background: #1e272e; padding: 8px; border-radius: 4px; text-align: center; margin: 10px 0; }
+    input[type="text"] { width: 100%; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #718093; background: #1e272e; color: #fff; margin-top: 8px; text-align: center; }
+
+    .ability-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
+    .ability-card { background: #2f3640; padding: 15px 10px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-size: 15px; font-weight: bold; transition: 0.1s;}
+    .ability-card small { display: block; color: #a4b0be; margin-top: 6px; font-size: 12px; font-weight: normal; }
+    .ability-card.selected { border-color: #2ecc71; background: #10ac84; }
+    
+    #board-container { flex-shrink: 0; }
+    #board { position: relative; width: calc(var(--cell-size) * 15); height: calc(var(--cell-size) * 15); background: #3d3d3d; border: 4px solid #718093; border-radius: 6px; overflow: hidden; }
+    #side-panel { width: 280px; display: flex; flex-direction: column; background: #2f3640; padding: 20px; border-radius: 8px; text-align: left; height: calc(var(--cell-size) * 15 + 8px); }
+    #status-bar { font-size: 20px; font-weight: bold; margin-bottom: 10px; display: flex; justify-content: space-between;}
+    #msg-display { font-size: 15px; font-weight: bold; height: 50px; margin: 10px 0; color:#e67e22; line-height: 1.4;}
+    #controls-info { background: #1e272e; padding: 12px; border-radius: 6px; font-size: 14px; color: #dcdde1; margin-bottom: auto;}
+    
+    .ability-btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 15px;}
+    .ability-btn { background: #2980b9; font-size: 16px; padding: 14px; border-radius: 6px; border: none; color: white; cursor: pointer; text-align: center; font-weight: bold;}
+    
+    .cell { position: absolute; width: var(--cell-size); height: var(--cell-size); }
+    .wall { background-color: #2c3e50; border: 1px solid #1a252f; z-index: 2;}
+    .temp-wall { background-color: #7f8c8d; border: 1px dashed #fff; z-index: 3;}
+    .passable-wall { background-color: #27ae60 !important; border: 2px solid #2ecc71 !important; box-shadow: 0 0 12px #2ecc71, inset 0 0 8px #2ecc71 !important; animation: wallhack-pulse 0.6s infinite alternate !important; z-index: 5 !important; }
+    @keyframes wallhack-pulse { from { opacity: 0.7; } to { opacity: 1; } }
+
+    .fog { background-color: #050505; z-index: 20; opacity: 1; }
+    .exit { background-color: #f1c40f; box-shadow: 0 0 15px #f1c40f; animation: exit-flash 0.5s infinite alternate; z-index: 4; }
+    @keyframes exit-flash { from { opacity: 0.5; } to { opacity: 1; } }
+    
+    .trap { background-color: rgba(142, 68, 173, 0.7); border-radius: 4px; z-index: 1;}
+    .trap-flash { animation: trap-trig 0.2s infinite; z-index: 15; }
+    @keyframes trap-trig { 0%, 100% { background-color: #e74c3c; } 50% { opacity: 0.5; } }
+
+    .entity { position: absolute; width: calc(var(--cell-size) - 8px); height: calc(var(--cell-size) - 8px); margin: 4px; border-radius: 50%; z-index: 10; }
+    .human { background-color: #2980b9; box-shadow: 0 0 8px #2980b9; border: 2px solid #fff; }
+    .ghost { background-color: #c0392b; box-shadow: 0 0 8px #c0392b; border: 2px solid #fff; }
+    .decoy { border: 2px dashed #fff !important; opacity: 0.9; }
+
+    .result-title { font-size: 42px; font-weight: bold; margin-bottom: 15px; }
+    .win-text { color: #2ecc71; } .lose-text { color: #e74c3c; } .draw-text { color: #f1c40f; }
+</style>
+</head>
+<body>
+
+<div id="app">
+    <!-- 主頁面：連線大廳 -->
+    <div id="screen-main" class="screen active">
+        <h1>迷宮大逃殺 (雙人連線)</h1>
+        <p class="subtitle">即時 P2P 連線遊戲，輸入代碼即可進行對決！</p>
+        
+        <div class="lobby-box">
+            <p style="margin:0 0 5px 0;"><b>連線狀態：</b><span id="conn-status" style="color:#e67e22;">連線中...</span></p>
+            <p style="margin:10px 0 0 0;">你的房間代碼：</p>
+            <div id="my-peer-id" class="room-id-display">產生中...</div>
+        </div>
+
+        <div class="lobby-box">
+            <p style="margin:0;"><b>加入朋友的房間：</b></p>
+            <input type="text" id="join-id-input" placeholder="貼上房東的代碼">
+            <button onclick="joinRoom()" style="width:100%; margin-top:10px; background:#2980b9;">加入對局</button>
+        </div>
+    </div>
+
+    <!-- 技能選擇 -->
+    <div id="screen-abilities" class="screen">
+        <h2>選擇兩個能力</h2>
+        <p id="role-notice" style="color:#f1c40f; font-weight:bold;"></p>
+        <div id="all-abilities" class="ability-grid">
+            <div class="ability-card" onclick="toggleAbility('trap', this)">1. 陷阱<small>離開此格生效,定身2秒<br>(CD: 30秒)</small></div>
+            <div class="ability-card" onclick="toggleAbility('godview', this)">2. 上帝視角<small>全圖透視 2 秒<br>(CD: 40秒)</small></div>
+            <div class="ability-card" onclick="toggleAbility('wallhack', this)">3. 穿牆<small>穿過 1 格厚牆<br>(CD: 30秒)</small></div>
+            <div class="ability-card" onclick="toggleAbility('speed', this)">4. 加速<small>3秒內變極快<br>(CD: 20秒)</small></div>
+            <div class="ability-card" onclick="toggleAbility('obstacle', this)">5. 障礙物<small>離開此格封路4秒<br>(CD: 30秒)</small></div>
+            <div class="ability-card" onclick="toggleAbility('decoy', this)">6. 假人<small>闖入對手視野<br>(CD: 30秒)</small></div>
+        </div>
+        <p style="color:#e74c3c; font-size: 15px; margin: 10px 0; height: 20px;" id="ability-warning"></p>
+        <button id="btn-ready" onclick="playerReady()">準備完成</button>
+    </div>
+
+    <!-- 遊戲畫面 -->
+    <div id="screen-game" class="screen">
+        <div id="board-container"><div id="board"></div></div>
+        <div id="side-panel">
+            <div id="status-bar">
+                <span id="time-display" style="color: #f1c40f;">02:00</span>
+                <span id="role-display"></span>
+            </div>
+            <hr style="width:100%; border-color:#718093; margin: 5px 0;">
+            <div id="msg-display"></div>
+            <div id="controls-info">
+                <p style="margin: 0 0 8px 0; border-bottom: 1px solid #718093; padding-bottom: 5px;">🎮 <b>控制說明</b></p>
+                <p style="margin: 5px 0;"><b>WASD / 方向鍵</b>：移動</p>
+                <p style="margin: 5px 0;"><b>1, 2 鍵</b>：使用技能</p>
+            </div>
+            <div id="ability-buttons" class="ability-btn-group"></div>
+        </div>
+    </div>
+
+    <!-- 結算畫面 -->
+    <div id="screen-result" class="screen">
+        <div id="result-header" class="result-title"></div>
+        <p id="result-reason" style="font-size: 18px; color: #dcdde1; margin: 20px 0;"></p>
+        <button onclick="location.reload()" style="background: #2ecc71;">回到大廳</button>
+    </div>
+</div>
+
+<script>
+// ==========================================
+// 🌐 PeerJS 網路連線模組
+// ==========================================
+let peer = null;
+let conn = null;
+let isHost = false; // 是否為房東 (房東負責運算地圖與狀態)
+let myRole = '';    // 'human' 或 'ghost'
+let isOpponentReady = false;
+
+function initPeer() {
+    peer = new Peer();
+
+    peer.on('open', (id) => {
+        document.getElementById('my-peer-id').innerText = id;
+        document.getElementById('conn-status').innerText = '準備就緒 (房東模式)';
+        document.getElementById('conn-status').style.color = '#2ecc71';
+    });
+
+    // 當有人連進來（房東端）
+    peer.on('connection', (c) => {
+        conn = c;
+        isHost = true;
+        myRole = 'human'; // 房東預設為人類
+        setupConnection();
+    });
+}
+
+function joinRoom() {
+    let hostId = document.getElementById('join-id-input').value.trim();
+    if (!hostId) { alert("請輸入對方的房間代碼！"); return; }
+    
+    conn = peer.connect(hostId);
+    isHost = false;
+    myRole = 'ghost'; // 客人預設為惡鬼
+    setupConnection();
+}
+
+function setupConnection() {
+    conn.on('open', () => {
+        document.getElementById('conn-status').innerText = '連線成功！';
+        document.getElementById('role-notice').innerText = `你的身份是：${myRole === 'human' ? '人類 (逃客)' : '惡鬼 (追擊)'}`;
+        switchScreen('screen-abilities');
+    });
+
+    // 收到網路訊息
+    conn.on('data', (data) => {
+        handleNetworkData(data);
+    });
+
+    conn.on('close', () => {
+        alert("對手已離線！");
+        location.reload();
+    });
+}
+
+function sendNet(type, payload) {
+    if (conn && conn.open) {
+        conn.send({ type, payload });
+    }
+}
+
+function handleNetworkData(data) {
+    switch (data.type) {
+        case 'READY':
+            isOpponentReady = true;
+            checkAllReady();
+            break;
+        case 'MOVE_REQ':
+            if (isHost) handleMoveRequest(data.payload.role, data.payload.dir);
+            break;
+        case 'ABILITY_REQ':
+            if (isHost) useAbility(data.payload.idx, data.payload.role);
+            break;
+        case 'GAME_STATE':
+            if (!isHost) syncGameState(data.payload);
+            break;
+        case 'GAME_OVER':
+            triggerGameOver(data.payload.outcome, data.payload.reason);
+            break;
+    }
+}
+
+initPeer();
+
+// ==========================================
+// ⚙️ 遊戲參數與狀態變數
+// ==========================================
+const CONFIG = {
+    MAP_SIZE: 15, TOTAL_TIME: 120, EXIT_TIME_LEFT: 30,
+    HUMAN_BASE_SPEED: 270, GHOST_BASE_SPEED: 260, SPEED_BUFF_VALUE: 185,
+    VISION_RANGE: 3,
+    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000, decoyLife: 2000 },
+    CD: { trap: 30000, godview: 40000, wallhack: 30000, speed: 20000, obstacle: 30000, decoy: 30000 }
+};
+
+const SIZE = CONFIG.MAP_SIZE;
+const CELL_PX = 32;
+
+let grid = [], fogGrid = [];
+let selectedAbilities = [];
+let gameInterval, logicInterval;
+let timeLeft = CONFIG.TOTAL_TIME;
+let exitsSpawned = false, isGameOver = false;
+
+let human = { x: 0, y: 0, speed: CONFIG.HUMAN_BASE_SPEED, cooldown: 0, rooted: 0 };
+let ghost = { x: SIZE-1, y: SIZE-1, speed: CONFIG.GHOST_BASE_SPEED, cooldown: 0, rooted: 0 };
+let decoys = [], traps = [], tempWalls = [];
+let pendingTrap = { human: null, ghost: null };
+let pendingObstacle = { human: null, ghost: null };
+
+let abilitiesState = {
+    human: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} },
+    ghost: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} }
+};
+
+// ==========================================
+// 🕹️ 移動與輸入控制
+// ==========================================
+window.addEventListener('keydown', (e) => {
+    if (isGameOver || currentScreen !== 'screen-game') return;
+    let k = e.key.toLowerCase();
+    
+    let dir = null;
+    if (k === 'w' || e.key === 'ArrowUp') dir = { dx: 0, dy: -1 };
+    if (k === 's' || e.key === 'ArrowDown') dir = { dx: 0, dy: 1 };
+    if (k === 'a' || e.key === 'ArrowLeft') dir = { dx: -1, dy: 0 };
+    if (k === 'd' || e.key === 'ArrowRight') dir = { dx: 1, dy: 0 };
+
+    if (dir) {
+        if (isHost) handleMoveRequest(myRole, dir);
+        else sendNet('MOVE_REQ', { role: myRole, dir });
+    }
+
+    if (k === '1') triggerAbilityReq(0);
+    if (k === '2') triggerAbilityReq(1);
+});
+
+function triggerAbilityReq(idx) {
+    if (isHost) useAbility(idx, myRole);
+    else sendNet('ABILITY_REQ', { idx, role: myRole });
+}
+
+function handleMoveRequest(role, dir) {
+    let entity = role === 'human' ? human : ghost;
+    if (entity.rooted <= 0 && entity.cooldown <= 0) {
+        attemptMove(entity, dir.dx, dir.dy, role);
+    }
+}
+
+function attemptMove(entity, dx, dy, role) {
+    let nx = entity.x + dx, ny = entity.y + dy;
+    if (nx < 0 || nx >= SIZE || ny < 0 || ny >= SIZE) return;
+
+    let st = abilitiesState[role];
+    let isWall = (grid[ny][nx] === 1 || grid[ny][nx] === 2);
+
+    if (st.wallhackReady && isWall) {
+        let nnx = nx + dx, nny = ny + dy;
+        if (nnx >= 0 && nnx < SIZE && nny >= 0 && nny < SIZE && grid[nny][nnx] !== 1 && grid[nny][nnx] !== 2) {
+            entity.x = nnx; entity.y = nny; entity.cooldown = entity.speed; st.wallhackReady = false;
+            return;
+        }
+    }
+    if (isWall) return;
+    entity.x = nx; entity.y = ny; entity.cooldown = entity.speed;
+}
+
+// ==========================================
+// ⚙️ 遊戲主邏輯（僅房東執行，並同步給客人）
+// ==========================================
+function gameLogicTick() {
+    if (!isHost || isGameOver) return;
+    let tick = 15;
+
+    updateEntityTick(human, tick, 'human');
+    updateEntityTick(ghost, tick, 'ghost');
+    checkPendingPlacement('human');
+    checkPendingPlacement('ghost');
+
+    // 更新障礙物
+    for (let i = tempWalls.length - 1; i >= 0; i--) {
+        tempWalls[i].timeLeft -= tick;
+        if (tempWalls[i].timeLeft <= 0) {
+            if(grid[tempWalls[i].y][tempWalls[i].x] === 2) grid[tempWalls[i].y][tempWalls[i].x] = 0;
+            tempWalls.splice(i, 1);
+        }
+    }
+
+    // 觸發陷阱檢查
+    checkTrapsTrigger();
+
+    // 勝負判定
+    if (human.x === ghost.x && human.y === ghost.y && ghost.rooted <= 0) {
+        endGame('ghost_win', '惡鬼成功捕捉了人類！');
+        return;
+    }
+    if (grid[human.y][human.x] === 3) {
+        endGame('human_win', '人類成功找到出口逃脫！');
+        return;
+    }
+
+    // 廣播最新遊戲狀態給客人
+    broadcastState();
+    updateVision(); render(); updateUI();
+}
+
+function broadcastState() {
+    sendNet('GAME_STATE', {
+        grid, human, ghost, traps, tempWalls, decoys, timeLeft, abilitiesState
+    });
+}
+
+function syncGameState(state) {
+    grid = state.grid;
+    human = state.human;
+    ghost = state.ghost;
+    traps = state.traps;
+    tempWalls = state.tempWalls;
+    decoys = state.decoys;
+    timeLeft = state.timeLeft;
+    abilitiesState = state.abilitiesState;
+
+    updateVision(); render(); updateUI();
+}
+
+function endGame(winner, reason) {
+    let outcomeHost = winner === 'human_win' ? 'win' : 'lose';
+    let outcomeClient = winner === 'human_win' ? 'lose' : 'win';
+
+    triggerGameOver(outcomeHost, reason);
+    sendNet('GAME_OVER', { outcome: outcomeClient, reason });
+}
+
+// ==========================================
+// 🛠️ 輔助邏輯與介面
+// ==========================================
+function updateEntityTick(entity, tick, role) {
+    if(entity.cooldown > 0) entity.cooldown -= tick;
+    if(entity.rooted > 0) entity.rooted -= tick;
+    let st = abilitiesState[role];
+    if(st.godviewTime > 0) st.godviewTime -= tick;
+    for(let abi in st.cds) { if(st.cds[abi] > 0) st.cds[abi] -= tick; }
+    if(st.speedTime > 0) { st.speedTime -= tick; entity.speed = CONFIG.SPEED_BUFF_VALUE; } 
+    else { entity.speed = role === 'human' ? CONFIG.HUMAN_BASE_SPEED : CONFIG.GHOST_BASE_SPEED; }
+}
+
+function checkPendingPlacement(role) {
+    let entity = role === 'human' ? human : ghost;
+    let pTrap = pendingTrap[role];
+    if (pTrap && (entity.x !== pTrap.x || entity.y !== pTrap.y)) {
+        traps.push({x: pTrap.x, y: pTrap.y, owner: role});
+        pendingTrap[role] = null;
+    }
+    let pObs = pendingObstacle[role];
+    if (pObs && (entity.x !== pObs.x || entity.y !== pObs.y)) {
+        grid[pObs.y][pObs.x] = 2;
+        tempWalls.push({x: pObs.x, y: pObs.y, timeLeft: CONFIG.DURATION.obstacle});
+        pendingObstacle[role] = null;
+    }
+}
+
+function checkTrapsTrigger() {
+    for (let i = traps.length - 1; i >= 0; i--) {
+        let t = traps[i];
+        let victim = (t.owner === 'ghost' && human.x === t.x && human.y === t.y) ? human :
+                     (t.owner === 'human' && ghost.x === t.x && ghost.y === t.y) ? ghost : null;
+        if (victim) {
+            victim.rooted = CONFIG.DURATION.trapRoot;
+            traps.splice(i, 1);
+        }
+    }
+}
+
+function useAbility(idx, role) {
+    let abi = selectedAbilities[idx];
+    let st = abilitiesState[role];
+    let entity = role === 'human' ? human : ghost;
+    if (!abi || st.cds[abi] > 0) return;
+
+    if(abi === 'speed') st.speedTime = CONFIG.DURATION.speed;
+    else if (abi === 'godview') st.godviewTime = CONFIG.DURATION.godview;
+    else if (abi === 'wallhack') st.wallhackReady = true;
+    else if (abi === 'trap') pendingTrap[role] = { x: entity.x, y: entity.y };
+    else if (abi === 'obstacle') pendingObstacle[role] = { x: entity.x, y: entity.y };
+
+    st.cds[abi] = CONFIG.CD[abi];
+}
+
+function playerReady() {
+    if (selectedAbilities.length !== 2) { alert("請選滿兩個能力！"); return; }
+    document.getElementById('btn-ready').disabled = true;
+    document.getElementById('btn-ready').innerText = "等待對手準備...";
+    
+    if (isHost) {
+        checkAllReady();
+    } else {
+        sendNet('READY', true);
+    }
+}
+
+function checkAllReady() {
+    if (isHost && isOpponentReady && selectedAbilities.length === 2) {
+        startGame();
+    }
+}
+
+function startGame() {
+    generateMaze();
+    dynamicRenderInit();
+    setupUI();
+    switchScreen('screen-game');
+    
+    gameInterval = setInterval(() => {
+        if (!isHost) return;
+        timeLeft--;
+        if (timeLeft === CONFIG.EXIT_TIME_LEFT) spawnExits();
+        if (timeLeft <= 0) endGame('draw', '時間到！無人逃離，平局收場。');
+    }, 1000);
+
+    logicInterval = setInterval(gameLogicTick, 15);
+}
+
+function generateMaze() {
+    grid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+    let walls = 0;
+    while (walls < 50) {
+        let r = Math.floor(Math.random() * SIZE), c = Math.floor(Math.random() * SIZE);
+        if ((r < 2 && c < 2) || (r > SIZE - 3 && c > SIZE - 3)) continue;
+        if (grid[r][c] === 0) { grid[r][c] = 1; walls++; }
+    }
+}
+
+function spawnExits() {
+    grid[0][Math.floor(SIZE/2)] = 3;
+    grid[SIZE-1][Math.floor(SIZE/2)] = 3;
+}
+
+function updateVision() {
+    fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(1));
+    let p = myRole === 'human' ? human : ghost;
+    if (abilitiesState[myRole].godviewTime > 0) {
+        fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
+        return;
+    }
+    for(let dy = -3; dy <= 3; dy++) {
+        for(let dx = -3; dx <= 3; dx++) {
+            let ty = p.y + dy, tx = p.x + dx;
+            if(ty>=0 && ty<SIZE && tx>=0 && tx<SIZE) fogGrid[ty][tx] = 0;
+        }
+    }
+}
+
+function dynamicRenderInit() {
+    let board = document.getElementById('board'); board.innerHTML = '';
+    for(let r=0; r<SIZE; r++) {
+        for(let c=0; c<SIZE; c++) {
+            let cell = document.createElement('div'); cell.id = `cell-${r}-${c}`; cell.className = 'cell';
+            cell.style.top = r * CELL_PX + 'px'; cell.style.left = c * CELL_PX + 'px'; board.appendChild(cell);
+        }
+    }
+    let hEl = document.createElement('div'); hEl.id = 'html-human'; hEl.className = 'entity human'; board.appendChild(hEl);
+    let gEl = document.createElement('div'); gEl.id = 'html-ghost'; gEl.className = 'entity ghost'; board.appendChild(gEl);
+}
+
+function render() {
+    let passableWalls = getPassableWalls();
+    for(let r=0; r<SIZE; r++) {
+        for(let c=0; c<SIZE; c++) {
+            let cell = document.getElementById(`cell-${r}-${c}`); if(!cell) continue;
+            let isVisible = fogGrid[r][c] === 0 || grid[r][c] === 3;
+            let isPassable = passableWalls.some(w => w.x === c && w.y === r);
+
+            cell.className = 'cell';
+            if (!isVisible && grid[r][c] !== 3 && !isPassable) cell.classList.add('fog');
+            else {
+                if(grid[r][c] === 1) cell.classList.add('wall');
+                if(grid[r][c] === 2) cell.classList.add('temp-wall');
+                if(grid[r][c] === 3) cell.classList.add('exit');
+                if(isPassable) cell.classList.add('passable-wall');
+            }
+        }
+    }
+    let hEl = document.getElementById('html-human');
+    hEl.style.top = human.y * CELL_PX + 'px'; hEl.style.left = human.x * CELL_PX + 'px';
+    let gEl = document.getElementById('html-ghost');
+    gEl.style.top = ghost.y * CELL_PX + 'px'; gEl.style.left = ghost.x * CELL_PX + 'px';
+}
+
+function getPassableWalls() {
+    let p = myRole === 'human' ? human : ghost;
+    let st = abilitiesState[myRole];
+    let passable = [];
+    if (!st || !st.wallhackReady) return passable;
+
+    let dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
+    for (let [dx, dy] of dirs) {
+        let wx = p.x + dx, wy = p.y + dy, tx = p.x + dx * 2, ty = p.y + dy * 2;
+        if (wx >= 0 && wx < SIZE && wy >= 0 && wy < SIZE && (grid[wy][wx] === 1 || grid[wy][wx] === 2)) {
+            if (tx >= 0 && tx < SIZE && ty >= 0 && ty < SIZE && grid[ty][tx] !== 1 && grid[ty][tx] !== 2) {
+                passable.push({ x: wx, y: wy });
+            }
+        }
+    }
+    return passable;
+}
+
+function switchScreen(id) {
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    currentScreen = id;
+}
+
+function toggleAbility(abi, el) {
+    if (selectedAbilities.includes(abi)) {
+        selectedAbilities = selectedAbilities.filter(a => a !== abi); el.classList.remove('selected');
+    } else {
+        if (selectedAbilities.length >= 2) return;
+        selectedAbilities.push(abi); el.classList.add('selected');
+    }
+}
+
+function setupUI() {
+    document.getElementById('role-display').innerText = myRole === 'human' ? '陣營: 人類' : '陣營: 惡鬼';
+    let container = document.getElementById('ability-buttons'); container.innerHTML = '';
+    selectedAbilities.forEach((abi, idx) => {
+        let btn = document.createElement('button'); btn.className = 'ability-btn'; btn.id = 'btn-abi-' + idx;
+        btn.onclick = () => triggerAbilityReq(idx); container.appendChild(btn);
+    });
+}
+
+function updateUI() {
+    let st = abilitiesState[myRole]; if(!st) return;
+    let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
+    document.getElementById('time-display').innerText = `${m<10?'0':''}${m}:${s<10?'0':''}${s}`;
+    
+    let abiNames = { trap:'陷阱', godview:'透視', wallhack:'穿牆', speed:'加速', obstacle:'障礙', decoy:'假人' };
+    selectedAbilities.forEach((abi, idx) => {
+        let btn = document.getElementById('btn-abi-' + idx); if(!btn) return;
+        if(st.cds[abi] > 0) { btn.disabled = true; btn.innerText = `${abiNames[abi]} (${Math.ceil(st.cds[abi] / 1000)}s)`; }
+        else { btn.disabled = false; btn.innerText = `${abiNames[abi]} (按 ${idx+1})`; }
+    });
+}
+
+function triggerGameOver(outcome, msg) {
+    isGameOver = true;
+    clearInterval(gameInterval); clearInterval(logicInterval);
+    let headerEl = document.getElementById('result-header');
+    if (outcome === 'win') { headerEl.innerText = "你贏了 🎉"; headerEl.className = "result-title win-text"; }
+    else if (outcome === 'lose') { headerEl.innerText = "你輸了 💀"; headerEl.className = "result-title lose-text"; }
+    else { headerEl.innerText = "平局 🤝"; headerEl.className = "result-title draw-text"; }
+    document.getElementById('result-reason').innerText = msg;
+    switchScreen('screen-result');
+}
+</script>
+</body>
+</html>
+
