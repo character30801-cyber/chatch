@@ -60,14 +60,12 @@
     .exit { background-color: #f1c40f; box-shadow: 0 0 15px #f1c40f; animation: exit-flash 0.5s infinite alternate; z-index: 4; }
     @keyframes exit-flash { from { opacity: 0.5; } to { opacity: 1; } }
     
-    .trap { background-color: rgba(142, 68, 173, 0.7); border-radius: 4px; z-index: 1;}
-    .trap-flash { animation: trap-trig 0.2s infinite; z-index: 15; }
-    @keyframes trap-trig { 0%, 100% { background-color: #e74c3c; } 50% { opacity: 0.5; } }
+    /* 陷阱樣式：明顯顯示為紫色亮框 */
+    .trap { background-color: rgba(142, 68, 173, 0.85); border: 2px solid #9b59b6; border-radius: 4px; z-index: 3; box-shadow: 0 0 6px #9b59b6; }
 
     .entity { position: absolute; width: calc(var(--cell-size) - 8px); height: calc(var(--cell-size) - 8px); margin: 4px; border-radius: 50%; z-index: 10; }
     .human { background-color: #2980b9; box-shadow: 0 0 8px #2980b9; border: 2px solid #fff; }
     .ghost { background-color: #c0392b; box-shadow: 0 0 8px #c0392b; border: 2px solid #fff; }
-    .decoy { border: 2px dashed #fff !important; opacity: 0.9; }
 
     .result-title { font-size: 42px; font-weight: bold; margin-bottom: 15px; }
     .win-text { color: #2ecc71; } .lose-text { color: #e74c3c; } .draw-text { color: #f1c40f; }
@@ -78,7 +76,7 @@
 <div id="app">
     <!-- 主頁面：連線大廳 -->
     <div id="screen-main" class="screen active">
-        <h1>迷宮大逃殺 (短房號版)</h1>
+        <h1>迷宮大逃殺 (雙人連線)</h1>
         <p class="subtitle">即時 P2P 連線遊戲，輸入 4 位數代碼即可對決！</p>
         
         <div class="lobby-box">
@@ -96,7 +94,7 @@
 
     <!-- 技能選擇 -->
     <div id="screen-abilities" class="screen">
-        <h2>選擇兩個能力</h2>
+        <h2>選擇兩個能力 (按鍵 1~6 勾選)</h2>
         <p id="role-notice" style="color:#f1c40f; font-weight:bold;"></p>
         <div id="all-abilities" class="ability-grid">
             <div class="ability-card" onclick="toggleAbility('trap', this)">1. 陷阱<small>離開此格生效,定身2秒<br>(CD: 30秒)</small></div>
@@ -106,8 +104,7 @@
             <div class="ability-card" onclick="toggleAbility('obstacle', this)">5. 障礙物<small>離開此格封路4秒<br>(CD: 30秒)</small></div>
             <div class="ability-card" onclick="toggleAbility('decoy', this)">6. 假人<small>闖入對手視野<br>(CD: 30秒)</small></div>
         </div>
-        <p style="color:#e74c3c; font-size: 15px; margin: 10px 0; height: 20px;" id="ability-warning"></p>
-        <button id="btn-ready" onclick="playerReady()">準備完成</button>
+        <button id="btn-ready" onclick="playerReady()">準備完成 (按 Enter)</button>
     </div>
 
     <!-- 遊戲畫面 -->
@@ -139,18 +136,20 @@
 
 <script>
 // ==========================================
-// 🌐 PeerJS 網路連線模組 (4位數短號版)
+// 🌐 PeerJS 網路連線模組
 // ==========================================
 let peer = null;
 let conn = null;
 let isHost = false;
 let myRole = '';
-let isOpponentReady = false;
+let currentScreen = 'screen-main';
+
+let isHostReady = false;
+let isClientReady = false;
+let playerAbilities = { human: [], ghost: [] };
 
 function initPeer() {
-    // 產生 4 位數隨機短號 (例如: a8k2)
     const shortId = Math.random().toString(36).substring(2, 6);
-    
     peer = new Peer(shortId);
 
     peer.on('open', (id) => {
@@ -160,9 +159,7 @@ function initPeer() {
     });
 
     peer.on('error', (err) => {
-        if (err.type === 'unavailable-id') {
-            initPeer(); // 代碼重複時自動刷新重新產生
-        }
+        if (err.type === 'unavailable-id') initPeer();
     });
 
     peer.on('connection', (c) => {
@@ -190,9 +187,7 @@ function setupConnection() {
         switchScreen('screen-abilities');
     });
 
-    conn.on('data', (data) => {
-        handleNetworkData(data);
-    });
+    conn.on('data', (data) => handleNetworkData(data));
 
     conn.on('close', () => {
         alert("對手已離線！");
@@ -201,16 +196,28 @@ function setupConnection() {
 }
 
 function sendNet(type, payload) {
-    if (conn && conn.open) {
-        conn.send({ type, payload });
-    }
+    if (conn && conn.open) conn.send({ type, payload });
 }
 
 function handleNetworkData(data) {
     switch (data.type) {
         case 'READY':
-            isOpponentReady = true;
-            checkAllReady();
+            if (isHost) {
+                isClientReady = true;
+                playerAbilities.ghost = data.payload.abilities;
+                checkAllReady();
+            }
+            break;
+        case 'START_GAME':
+            if (!isHost) {
+                grid = data.payload.grid;
+                human = data.payload.human;
+                ghost = data.payload.ghost;
+                timeLeft = data.payload.timeLeft;
+                dynamicRenderInit();
+                setupUI();
+                switchScreen('screen-game');
+            }
             break;
         case 'MOVE_REQ':
             if (isHost) handleMoveRequest(data.payload.role, data.payload.dir);
@@ -230,36 +237,26 @@ function handleNetworkData(data) {
 initPeer();
 
 // ==========================================
-// ⚙️ 遊戲參數與邏輯
+// 🕹️ 鍵盤控制（選角頁面 + 遊戲操作）
 // ==========================================
-const CONFIG = {
-    MAP_SIZE: 15, TOTAL_TIME: 120, EXIT_TIME_LEFT: 30,
-    HUMAN_BASE_SPEED: 270, GHOST_BASE_SPEED: 260, SPEED_BUFF_VALUE: 185,
-    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000 },
-    CD: { trap: 30000, godview: 40000, wallhack: 30000, speed: 20000, obstacle: 30000, decoy: 30000 }
-};
-
-const SIZE = CONFIG.MAP_SIZE;
-const CELL_PX = 32;
-
-let grid = [], fogGrid = [];
 let selectedAbilities = [];
-let gameInterval, logicInterval;
-let timeLeft = CONFIG.TOTAL_TIME;
-let isGameOver = false;
-
-let human = { x: 0, y: 0, speed: CONFIG.HUMAN_BASE_SPEED, cooldown: 0, rooted: 0 };
-let ghost = { x: SIZE-1, y: SIZE-1, speed: CONFIG.GHOST_BASE_SPEED, cooldown: 0, rooted: 0 };
-let decoys = [], traps = [], tempWalls = [];
-let pendingTrap = { human: null, ghost: null };
-let pendingObstacle = { human: null, ghost: null };
-
-let abilitiesState = {
-    human: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} },
-    ghost: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} }
-};
 
 window.addEventListener('keydown', (e) => {
+    // 1. 選角頁面的鍵盤控制 (1~6 勾選, Enter 準備)
+    if (currentScreen === 'screen-abilities') {
+        const abiList = ['trap', 'godview', 'wallhack', 'speed', 'obstacle', 'decoy'];
+        const keyMap = {'1':0, '2':1, '3':2, '4':3, '5':4, '6':5};
+        if (e.key in keyMap) {
+            let idx = keyMap[e.key];
+            let cards = document.querySelectorAll('.ability-card');
+            if (cards[idx]) toggleAbility(abiList[idx], cards[idx]);
+        } else if (e.key === 'Enter') {
+            playerReady();
+        }
+        return;
+    }
+
+    // 2. 遊戲進行中的鍵盤控制
     if (isGameOver || currentScreen !== 'screen-game') return;
     let k = e.key.toLowerCase();
     
@@ -277,6 +274,83 @@ window.addEventListener('keydown', (e) => {
     if (k === '1') triggerAbilityReq(0);
     if (k === '2') triggerAbilityReq(1);
 });
+
+function toggleAbility(abi, el) {
+    if (selectedAbilities.includes(abi)) {
+        selectedAbilities = selectedAbilities.filter(a => a !== abi); el.classList.remove('selected');
+    } else {
+        if (selectedAbilities.length >= 2) return;
+        selectedAbilities.push(abi); el.classList.add('selected');
+    }
+}
+
+function playerReady() {
+    if (selectedAbilities.length !== 2) { alert("請選滿兩個能力！"); return; }
+    document.getElementById('btn-ready').disabled = true;
+    document.getElementById('btn-ready').innerText = "等待對手準備...";
+    
+    if (isHost) {
+        isHostReady = true;
+        playerAbilities.human = selectedAbilities;
+        checkAllReady();
+    } else {
+        sendNet('READY', { abilities: selectedAbilities });
+    }
+}
+
+function checkAllReady() {
+    if (isHost && isHostReady && isClientReady) {
+        startGame();
+    }
+}
+
+// ==========================================
+// ⚙️ 遊戲核心邏輯
+// ==========================================
+const CONFIG = {
+    MAP_SIZE: 15, TOTAL_TIME: 120, EXIT_TIME_LEFT: 30,
+    HUMAN_BASE_SPEED: 270, GHOST_BASE_SPEED: 260, SPEED_BUFF_VALUE: 185,
+    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000 },
+    CD: { trap: 30000, godview: 40000, wallhack: 30000, speed: 20000, obstacle: 30000, decoy: 30000 }
+};
+
+const SIZE = CONFIG.MAP_SIZE;
+const CELL_PX = 32;
+
+let grid = [], fogGrid = [];
+let gameInterval, logicInterval;
+let timeLeft = CONFIG.TOTAL_TIME;
+let isGameOver = false;
+
+let human = { x: 0, y: 0, speed: CONFIG.HUMAN_BASE_SPEED, cooldown: 0, rooted: 0 };
+let ghost = { x: SIZE-1, y: SIZE-1, speed: CONFIG.GHOST_BASE_SPEED, cooldown: 0, rooted: 0 };
+let decoys = [], traps = [], tempWalls = [];
+let pendingTrap = { human: null, ghost: null };
+let pendingObstacle = { human: null, ghost: null };
+
+let abilitiesState = {
+    human: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} },
+    ghost: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} }
+};
+
+function startGame() {
+    generateMaze();
+    dynamicRenderInit();
+    setupUI();
+    switchScreen('screen-game');
+
+    // 房東廣播「開始遊戲」與初始地圖給客人
+    sendNet('START_GAME', { grid, human, ghost, timeLeft });
+
+    gameInterval = setInterval(() => {
+        if (!isHost) return;
+        timeLeft--;
+        if (timeLeft === CONFIG.EXIT_TIME_LEFT) spawnExits();
+        if (timeLeft <= 0) endGame('draw', '時間到！無人逃離，平局收場。');
+    }, 1000);
+
+    logicInterval = setInterval(gameLogicTick, 15);
+}
 
 function triggerAbilityReq(idx) {
     if (isHost) useAbility(idx, myRole);
@@ -397,7 +471,7 @@ function checkTrapsTrigger() {
 }
 
 function useAbility(idx, role) {
-    let abi = selectedAbilities[idx];
+    let abi = playerAbilities[role] ? playerAbilities[role][idx] : null;
     let st = abilitiesState[role];
     let entity = role === 'human' ? human : ghost;
     if (!abi || st.cds[abi] > 0) return;
@@ -409,31 +483,6 @@ function useAbility(idx, role) {
     else if (abi === 'obstacle') pendingObstacle[role] = { x: entity.x, y: entity.y };
 
     st.cds[abi] = CONFIG.CD[abi];
-}
-
-function playerReady() {
-    if (selectedAbilities.length !== 2) { alert("請選滿兩個能力！"); return; }
-    document.getElementById('btn-ready').disabled = true;
-    document.getElementById('btn-ready').innerText = "等待對手準備...";
-    
-    if (isHost) checkAllReady();
-    else sendNet('READY', true);
-}
-
-function checkAllReady() {
-    if (isHost && isOpponentReady && selectedAbilities.length === 2) startGame();
-}
-
-function startGame() {
-    generateMaze(); dynamicRenderInit(); setupUI(); switchScreen('screen-game');
-    gameInterval = setInterval(() => {
-        if (!isHost) return;
-        timeLeft--;
-        if (timeLeft === CONFIG.EXIT_TIME_LEFT) spawnExits();
-        if (timeLeft <= 0) endGame('draw', '時間到！無人逃離，平局收場。');
-    }, 1000);
-
-    logicInterval = setInterval(gameLogicTick, 15);
 }
 
 function generateMaze() {
@@ -453,11 +502,11 @@ function spawnExits() {
 
 function updateVision() {
     fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(1));
-    let p = myRole === 'human' ? human : ghost;
     if (abilitiesState[myRole].godviewTime > 0) {
         fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
         return;
     }
+    let p = myRole === 'human' ? human : ghost;
     for(let dy = -3; dy <= 3; dy++) {
         for(let dx = -3; dx <= 3; dx++) {
             let ty = p.y + dy, tx = p.x + dx;
@@ -486,12 +535,18 @@ function render() {
             let isVisible = fogGrid[r][c] === 0 || grid[r][c] === 3;
             let isPassable = passableWalls.some(w => w.x === c && w.y === r);
 
+            // 陷阱顯示：玩家可以看到自己下的陷阱，或視線內的陷阱
+            let trapHere = traps.find(t => t.x === c && t.y === r);
+            let showTrap = trapHere && (trapHere.owner === myRole || isVisible);
+
             cell.className = 'cell';
-            if (!isVisible && grid[r][c] !== 3 && !isPassable) cell.classList.add('fog');
-            else {
+            if (!isVisible && grid[r][c] !== 3 && !isPassable && !showTrap) {
+                cell.classList.add('fog');
+            } else {
                 if(grid[r][c] === 1) cell.classList.add('wall');
                 if(grid[r][c] === 2) cell.classList.add('temp-wall');
                 if(grid[r][c] === 3) cell.classList.add('exit');
+                if(showTrap) cell.classList.add('trap');
                 if(isPassable) cell.classList.add('passable-wall');
             }
         }
@@ -524,15 +579,6 @@ function switchScreen(id) {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
     document.getElementById(id).classList.add('active');
     currentScreen = id;
-}
-
-function toggleAbility(abi, el) {
-    if (selectedAbilities.includes(abi)) {
-        selectedAbilities = selectedAbilities.filter(a => a !== abi); el.classList.remove('selected');
-    } else {
-        if (selectedAbilities.length >= 2) return;
-        selectedAbilities.push(abi); el.classList.add('selected');
-    }
 }
 
 function setupUI() {
