@@ -1,619 +1,1031 @@
 <!DOCTYPE html>
 <html lang="zh-TW">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>迷宮大逃殺</title>
-<!-- 引入 PeerJS 免費連線庫 -->
-<script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
-<style>
-    :root { --cell-size: 32px; }
-    * { box-sizing: border-box; }
-    body { 
-        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-        background-color: #121212; color: #fff; margin: 0; padding: 0; 
-        user-select: none; overflow: hidden; height: 100vh; width: 100vw;
-        display: flex; justify-content: center; align-items: center;
-    }
-    #app { position: relative; width: 100%; height: 100%; display: flex; justify-content: center; align-items: center; }
-    .screen { 
-        display: none; width: 100%; max-width: 650px; background: #1e272e; 
-        padding: 30px; border-radius: 12px; box-shadow: 0 8px 20px rgba(0,0,0,0.7); text-align: center;
-    }
-    .screen.active { display: block; }
-    #screen-game.active { display: flex; max-width: 900px; flex-direction: row; gap: 20px; align-items: flex-start; }
-    
-    h1 { color: #f39c12; margin: 0 0 15px 0; font-size: 32px; }
-    h2 { margin: 0 0 15px 0; color: #f39c12; }
-    p.subtitle { color: #a4b0be; font-size: 15px; margin-bottom: 25px; }
-    
-    button { background: #e74c3c; color: white; border: none; padding: 12px 28px; font-size: 18px; border-radius: 8px; cursor: pointer; margin-top: 15px; font-weight: bold; transition: 0.2s;}
-    button:hover { background: #c0392b; transform: scale(1.05); }
-    button:disabled { background: #7f8c8d; cursor: not-allowed; transform: none; }
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>迷宮大逃殺</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        :root { 
+            /* 【重點修改】地圖基礎大小與最大值大幅提升，讓畫面更大！ */
+            --cell-size: clamp(24px, 5.5vh, 45px); 
+            --grid-w: 20;
+            --grid-h: 15;
+        }
+        * { box-sizing: border-box; }
+        
+        body { 
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
+            background-color: #121212; color: #fff; margin: 0; 
+            padding: 5px 15px; 
+            user-select: none; display: flex; flex-direction: column; align-items: center;
+            height: 100vh; overflow: hidden; justify-content: flex-start;
+        }
+        
+        h1 { color: #f39c12; margin: 5px 0 10px 0; font-size: clamp(22px, 4vh, 32px); text-shadow: 0 0 10px rgba(243, 156, 18, 0.5); }
+        
+        .menu-btn { background: #e74c3c; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 6px; cursor: pointer; font-weight: bold; transition: 0.2s; margin: 8px; width: 220px; border: 2px solid transparent;}
+        .menu-btn:hover { background: #c0392b; transform: scale(1.05); }
+        .menu-btn.info { background: #2980b9; }
+        .menu-btn.focused { transform: scale(1.05); box-shadow: 0 0 15px #f1c40f; border: 2px solid #fff; } 
+        .menu-btn:disabled { background: #7f8c8d; cursor: not-allowed; transform: none; }
+        .back-btn { background: #7f8c8d; font-size: 14px; padding: 8px 15px; width: auto; margin-top: 15px; }
+        .back-btn:hover { background: #95a5a6; }
+        
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.85); z-index: 100; justify-content: center; align-items: center; flex-direction: column;}
+        #about-content { background: #1e272e; padding: 20px; border-radius: 10px; width: 90%; max-width: 800px; max-height: 85vh; overflow-y: auto; font-size: 14px; border: 2px solid #f1c40f; line-height: 1.6; }
+        #about-content pre { white-space: pre-wrap; word-wrap: break-word; font-family: inherit; margin: 0; color: #dcdde1; }
+        .close-btn { float: right; background: #e74c3c; border: none; color: white; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-weight: bold; margin-left: 10px; margin-bottom: 10px;}
 
-    .lobby-box { background: #2f3640; padding: 20px; border-radius: 8px; margin: 15px 0; text-align: left; }
-    .room-id-display { font-size: 32px; font-weight: bold; color: #f1c40f; letter-spacing: 4px; user-select: all; background: #1e272e; padding: 10px; border-radius: 6px; text-align: center; margin: 10px 0; border: 1px dashed #f1c40f; }
-    input[type="text"] { width: 100%; padding: 12px; font-size: 18px; border-radius: 6px; border: 1px solid #718093; background: #1e272e; color: #fff; margin-top: 8px; text-align: center; text-transform: lowercase; }
+        #lobby, #skill-select { display: none; background: #1e272e; padding: 20px; border-radius: 12px; text-align: center; max-width: 500px; width: 100%; box-shadow: 0 8px 20px rgba(0,0,0,0.7); }
+        input { padding: 10px; background: #2f3640; border: 1px solid #718093; color: #fff; border-radius: 6px; width: 60%; margin-right: 10px; font-size: 16px; text-transform: uppercase;}
+        
+        .ability-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 15px 0; }
+        .ability-card { background: #2f3640; padding: 8px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-size: 12px; transition: 0.2s;}
+        .ability-card.selected { border-color: #3498db; background: #2980b9; } 
+        .ability-card.p2-selected { border-color: #e74c3c; background: #c0392b; } 
+        .ability-card.focused { border-color: #f1c40f; box-shadow: 0 0 10px #f1c40f; } 
 
-    .ability-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
-    .ability-card { background: #2f3640; padding: 15px 10px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-size: 15px; font-weight: bold; transition: 0.1s;}
-    .ability-card small { display: block; color: #a4b0be; margin-top: 6px; font-size: 12px; font-weight: normal; }
-    .ability-card.selected { border-color: #2ecc71; background: #10ac84; }
-    
-    #board-container { flex-shrink: 0; }
-    #board { position: relative; width: calc(var(--cell-size) * 15); height: calc(var(--cell-size) * 15); background: #3d3d3d; border: 4px solid #718093; border-radius: 6px; overflow: hidden; }
-    #side-panel { width: 280px; display: flex; flex-direction: column; background: #2f3640; padding: 20px; border-radius: 8px; text-align: left; height: calc(var(--cell-size) * 15 + 8px); }
-    #status-bar { font-size: 20px; font-weight: bold; margin-bottom: 10px; display: flex; justify-content: space-between;}
-    #msg-display { font-size: 15px; font-weight: bold; height: 50px; margin: 10px 0; color:#e67e22; line-height: 1.4;}
-    #controls-info { background: #1e272e; padding: 12px; border-radius: 6px; font-size: 14px; color: #dcdde1; margin-bottom: auto;}
-    
-    .ability-btn-group { display: flex; flex-direction: column; gap: 12px; margin-top: 15px;}
-    .ability-btn { background: #2980b9; font-size: 16px; padding: 14px; border-radius: 6px; border: none; color: white; cursor: pointer; text-align: center; font-weight: bold;}
-    
-    .cell { position: absolute; width: var(--cell-size); height: var(--cell-size); }
-    .wall { background-color: #2c3e50; border: 1px solid #1a252f; z-index: 2;}
-    .temp-wall { background-color: #7f8c8d; border: 1px dashed #fff; z-index: 3;}
-    .passable-wall { background-color: #27ae60 !important; border: 2px solid #2ecc71 !important; box-shadow: 0 0 12px #2ecc71, inset 0 0 8px #2ecc71 !important; animation: wallhack-pulse 0.6s infinite alternate !important; z-index: 5 !important; }
-    @keyframes wallhack-pulse { from { opacity: 0.7; } to { opacity: 1; } }
+        #game-screen { 
+            display: none; flex-direction: row; gap: 20px; align-items: stretch;
+            justify-content: center; flex-wrap: wrap; /* 支援大畫面排版 */
+            height: calc(var(--cell-size) * var(--grid-h) + 8px); 
+        }
+        #board { 
+            position: relative; box-sizing: content-box; 
+            width: calc(var(--cell-size) * var(--grid-w)); height: calc(var(--cell-size) * var(--grid-h)); 
+            background: #3d3d3d; border: 4px solid #718093; border-radius: 6px; overflow: hidden; flex-shrink: 0;
+        }
+        
+        #right-column { 
+            display: flex; flex-direction: column; gap: 10px; width: 280px; flex-shrink: 0;
+            height: 100%; 
+        }
+        
+        #side-panel { background: #2f3640; padding: 12px; border-radius: 8px; display: flex; flex-direction: column; flex-shrink: 0;}
+        #status-bar { font-size: 16px; font-weight: bold; display: flex; justify-content: space-between; }
+        #msg-display { font-size: 13px; color:#e67e22; height: 18px; margin: 6px 0; font-weight: bold;}
+        
+        .ability-btn { font-size: 12px; padding: 6px; border-radius: 6px; border: none; color: white; width: 100%; margin-top: 4px; font-weight: bold; background: #2980b9; transition: 0.1s;}
+        .ability-btn:disabled { background: #7f8c8d !important; opacity: 0.6; }
 
-    .fog { background-color: #050505; z-index: 20; opacity: 1; }
-    .exit { background-color: #f1c40f; box-shadow: 0 0 15px #f1c40f; animation: exit-flash 0.5s infinite alternate; z-index: 4; }
-    @keyframes exit-flash { from { opacity: 0.5; } to { opacity: 1; } }
-    
-    /* 陷阱樣式：明顯顯示為紫色亮框 */
-    .trap { background-color: rgba(142, 68, 173, 0.85); border: 2px solid #9b59b6; border-radius: 4px; z-index: 3; box-shadow: 0 0 6px #9b59b6; }
+        #chat-panel { background: #2f3640; padding: 10px; border-radius: 8px; display: flex; flex-direction: column; flex-grow: 1; height: auto; overflow: hidden; }
+        #chat-log { flex-grow: 1; height: 0; background: #1e272e; border-radius: 4px; padding: 8px; overflow-y: auto; margin-bottom: 8px; font-size: 12px; }
+        #chat-log::-webkit-scrollbar { display: none; }
+        #chat-log { -ms-overflow-style: none; scrollbar-width: none; }
 
-    .entity { position: absolute; width: calc(var(--cell-size) - 8px); height: calc(var(--cell-size) - 8px); margin: 4px; border-radius: 50%; z-index: 10; }
-    .human { background-color: #2980b9; box-shadow: 0 0 8px #2980b9; border: 2px solid #fff; }
-    .ghost { background-color: #c0392b; box-shadow: 0 0 8px #c0392b; border: 2px solid #fff; }
+        .chat-msg { margin-bottom: 5px; word-wrap: break-word;}
+        .chat-msg.sys { color: #f1c40f; font-style: italic; }
+        .chat-msg.me { color: #2ecc71; }
+        .chat-msg.opp { color: #e74c3c; }
+        #chat-input-area { display: flex; gap: 5px; flex-shrink: 0;}
+        #chat-input-area input { width: 100%; margin: 0; padding: 6px; text-transform: none; font-size: 12px;}
+        #chat-input-area button { background: #2ecc71; border: none; border-radius: 4px; color: white; cursor: pointer; padding: 0 10px; font-weight: bold; }
 
-    .result-title { font-size: 42px; font-weight: bold; margin-bottom: 15px; }
-    .win-text { color: #2ecc71; } .lose-text { color: #e74c3c; } .draw-text { color: #f1c40f; }
-</style>
+        .cell { position: absolute; width: var(--cell-size); height: var(--cell-size); transition: background-color 0.1s; }
+        .fog { background-color: #080808 !important; border: none !important; z-index: 15; }
+        .wall { background-color: #2c3e50; border: 1px solid #1a252f; }
+        .temp-wall { background-color: #7f8c8d; border: 1px dashed #fff; z-index: 2;}
+        .trap { background-color: rgba(142, 68, 173, 0.6); border-radius: 4px; z-index: 1;}
+        
+        .trap-triggered { animation: trap-triggered-flash 0.25s infinite alternate; z-index: 25 !important; }
+        @keyframes trap-triggered-flash { 0% { background-color: rgba(142,68,173,1); } 100% { background-color: #f1c40f; } }
+        
+        .portal-p1 { background: radial-gradient(circle, #00d2d3 30%, #2e86de 80%); border-radius: 50%; box-shadow: 0 0 10px #00d2d3; z-index: 4; animation: portal-pulse 0.8s infinite alternate; }
+        .portal-p2 { background: radial-gradient(circle, #ff9f43 30%, #ee5253 80%); border-radius: 50%; box-shadow: 0 0 10px #ff9f43; z-index: 4; animation: portal-pulse 0.8s infinite alternate; }
+        @keyframes portal-pulse { from { transform: scale(0.85); } to { transform: scale(1.05); } }
+
+        .exit { background-color: #f1c40f !important; box-shadow: 0 0 15px #f1c40f; animation: exit-flash 0.5s infinite alternate; z-index: 20; border: none !important;}
+        @keyframes exit-flash { from { background-color: #f1c40f; opacity: 0.6; } to { background-color: #e67e22; opacity: 1; } }
+
+        .entity { position: absolute; width: calc(var(--cell-size) - 6px); height: calc(var(--cell-size) - 6px); margin: 3px; border-radius: 50%; border: 2px solid #fff; transition: opacity 0.3s, transform 0.3s; }
+        .human { background-color: #2980b9; box-shadow: 0 0 8px #2980b9; z-index: 10 !important;}
+        .ghost { background-color: #c0392b; box-shadow: 0 0 8px #c0392b; z-index: 12 !important;}
+        .entity.dead { opacity: 0 !important; transform: scale(0.2) !important; }
+
+    </style>
 </head>
 <body>
 
-<div id="app">
-    <!-- 主頁面：連線大廳 -->
-    <div id="screen-main" class="screen active">
-        <h1>迷宮大逃殺 (雙人連線)</h1>
-        <p class="subtitle">即時 P2P 連線遊戲，輸入 4 位數代碼即可對決！</p>
-        
-        <div class="lobby-box">
-            <p style="margin:0 0 5px 0;"><b>連線狀態：</b><span id="conn-status" style="color:#e67e22;">產生房間中...</span></p>
-            <p style="margin:10px 0 0 0;">你的房間代碼：</p>
-            <div id="my-peer-id" class="room-id-display">...</div>
-        </div>
+    <h1>迷宮大逃殺</h1>
 
-        <div class="lobby-box">
-            <p style="margin:0;"><b>加入朋友的房間：</b></p>
-            <input type="text" id="join-id-input" placeholder="輸入 4 位數代碼" maxlength="4">
-            <button onclick="joinRoom()" style="width:100%; margin-top:10px; background:#2980b9;">加入對局</button>
+    <!-- 主選單 -->
+    <div id="main-menu">
+        <button class="menu-btn focused" onclick="startMode('p2p')">雙人對戰 (網路連線)</button><br>
+        <button class="menu-btn" onclick="startMode('pve')">人機對戰 (單機)</button><br>
+        <button class="menu-btn" onclick="startMode('test')">自行測試 (單機雙控)</button><br>
+        <button class="menu-btn info" onclick="document.getElementById('modal-about').style.display='flex'">關於遊戲</button>
+    </div>
+
+    <!-- 關於遊戲彈窗 -->
+    <div id="modal-about" class="modal-overlay">
+        <div id="about-content">
+            <button class="close-btn" onclick="document.getElementById('modal-about').style.display='none'">關閉</button>
+            <pre>遊戲名稱: 迷宮大逃殺
+
+設定:
+有人類和鬼兩種陣營。遊戲開始時雙方從對角出發。地圖尺寸為 20×15 寬敞迷宮，互相聯通。遊戲時間為2分鐘，前1分30秒沒有任何變化，1分30秒一到，系統會隨機生成兩個出口（相距 9 格以上）。出口位置雙方全圖可見且不斷閃爍。人類逃到出口獲勝，鬼抓到人獲勝。視野為7×7，遊戲開始前雙方可選 2 個能力。
+
+能力:
+1. 陷阱：可將空格變陷阱（無上限），踩中定身2秒，發動者免疫。觸發時該格會閃爍2秒提醒。CD: 20s
+2. 上帝視角：觀看全圖2秒，看到雙方位置與陷阱。CD: 20s
+3. 穿牆：可穿越單層牆壁或障礙物。CD: 20s
+4. 加速：速度變快，持續3秒。CD: 10s
+5. 障礙物：前方一格暫時變牆壁，持續3秒。CD: 20s
+6. 傳送門：設定最多2個傳送門進行雙向傳送（對手無法傳送）。CD: 20s
+7. 迷霧：將對手視野全黑持續2秒；若對方剛好開上帝視角則直接反制使其什麼都看不到。CD: 25s</pre>
         </div>
     </div>
 
-    <!-- 技能選擇 -->
-    <div id="screen-abilities" class="screen">
-        <h2>選擇兩個能力 (按鍵 1~6 勾選)</h2>
-        <p id="role-notice" style="color:#f1c40f; font-weight:bold;"></p>
-        <div id="all-abilities" class="ability-grid">
-            <div class="ability-card" onclick="toggleAbility('trap', this)">1. 陷阱<small>離開此格生效,定身2秒<br>(CD: 30秒)</small></div>
-            <div class="ability-card" onclick="toggleAbility('godview', this)">2. 上帝視角<small>全圖透視 2 秒<br>(CD: 40秒)</small></div>
-            <div class="ability-card" onclick="toggleAbility('wallhack', this)">3. 穿牆<small>穿過 1 格厚牆<br>(CD: 30秒)</small></div>
-            <div class="ability-card" onclick="toggleAbility('speed', this)">4. 加速<small>3秒內變極快<br>(CD: 20秒)</small></div>
-            <div class="ability-card" onclick="toggleAbility('obstacle', this)">5. 障礙物<small>離開此格封路4秒<br>(CD: 30秒)</small></div>
-            <div class="ability-card" onclick="toggleAbility('decoy', this)">6. 假人<small>闖入對手視野<br>(CD: 30秒)</small></div>
+    <!-- 結算彈窗 -->
+    <div id="modal-gameover" class="modal-overlay" style="z-index: 200;">
+        <h1 id="go-title" style="font-size:clamp(30px, 6vh, 45px); margin-bottom:10px;"></h1>
+        <p id="go-msg" style="font-size:18px; color:#bdc3c7; margin-bottom:30px; font-weight: bold;"></p>
+        <button class="menu-btn" onclick="voteReplay()" style="background:#2ecc71;">再來一局</button>
+        <button class="menu-btn" onclick="goBack()" style="background:#e74c3c;">返回大廳</button>
+        <p id="replay-status" style="color:#f1c40f; margin-top:15px; font-weight:bold;"></p>
+    </div>
+
+    <!-- 聯網大廳 -->
+    <div id="lobby">
+        <h2 id="net-status" style="color: #f1c40f;">連線伺服器準備中...</h2>
+        <div id="room-controls" style="display:none; margin-bottom: 20px;">
+            <button class="menu-btn" onclick="hostRoom()" style="background:#8e44ad;">建立新房間 (當房主)</button>
+            <div style="margin: 15px 0; color:#a4b0be;">─ 或者 ─</div>
+            <input type="text" id="join-id" placeholder="輸入房主代碼">
+            <button class="menu-btn" id="join-btn" onclick="joinRoom()" style="width:100px;">加入</button>
         </div>
-        <button id="btn-ready" onclick="playerReady()">準備完成 (按 Enter)</button>
+        <div id="room-display" style="color: #2ecc71; font-size: 24px; font-weight: bold; margin-bottom: 15px; letter-spacing: 2px;"></div>
+        <button class="menu-btn back-btn" onclick="goBack()">返回主選單</button>
+    </div>
+
+    <!-- 技能準備區 -->
+    <div id="skill-select">
+        <h2 id="role-announce" style="margin-top:0;"></h2>
+        <div class="ability-grid">
+            <div class="ability-card" onclick="selectAbi('trap', this)">1. 陷阱<small><br>(無上限, CD:20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('godview', this)">2. 上帝視角<small><br>(CD: 20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('wallhack', this)">3. 穿牆<small><br>(CD: 20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('speed', this)">4. 加速<small><br>(CD: 10s)</small></div>
+            <div class="ability-card" onclick="selectAbi('obstacle', this)">5. 障礙物<small><br>(CD: 20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('portal', this)">6. 傳送門<small><br>(CD: 20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('fog', this)" style="grid-column: span 2;">7. 迷霧<small> (盲化對手2秒 / 剋制上帝視角, CD: 25s)</small></div>
+        </div>
+        <button id="ready-btn" class="menu-btn" onclick="playerReady()">確認準備</button>
+        <p id="ready-status" style="color:#f1c40f; margin-top:10px;"></p>
+        <button class="menu-btn back-btn" onclick="goBack()">返回主選單</button>
     </div>
 
     <!-- 遊戲畫面 -->
-    <div id="screen-game" class="screen">
-        <div id="board-container"><div id="board"></div></div>
-        <div id="side-panel">
-            <div id="status-bar">
-                <span id="time-display" style="color: #f1c40f;">02:00</span>
-                <span id="role-display"></span>
+    <div id="game-screen">
+        <div id="board"></div>
+        
+        <div id="right-column">
+            <div id="side-panel">
+                <div id="status-bar">
+                    <span id="role-tag" style="color:#f1c40f;">載入中...</span>
+                    <span id="time-tag">02:00</span>
+                </div>
+                <hr style="width:100%; border-color:#718093; margin: 8px 0;">
+                <div id="msg-display"></div>
+                <div id="skill-box" style="margin-bottom: 5px;"></div>
+                
+                <div style="background: #1e272e; padding: 8px; border-radius: 6px; font-size: 11px; margin-top: 5px;">
+                    <p style="margin: 0 0 4px 0; border-bottom: 1px solid #718093;">🎮 <b>控制操作</b></p>
+                    <p id="ctrl-hint" style="margin: 2px 0;"><b>WASD/方向鍵</b> 移動 | <b>1, 2</b> 技能</p>
+                </div>
             </div>
-            <hr style="width:100%; border-color:#718093; margin: 5px 0;">
-            <div id="msg-display"></div>
-            <div id="controls-info">
-                <p style="margin: 0 0 8px 0; border-bottom: 1px solid #718093; padding-bottom: 5px;">🎮 <b>控制說明</b></p>
-                <p style="margin: 5px 0;"><b>WASD / 方向鍵</b>：移動</p>
-                <p style="margin: 5px 0;"><b>1, 2 鍵</b>：使用技能</p>
+            
+            <div id="chat-panel">
+                <div id="chat-log"></div>
+                <div id="chat-input-area">
+                    <input type="text" id="chat-input" placeholder="聊天..." onkeypress="if(event.key==='Enter') sendChat()">
+                    <button onclick="sendChat()">送出</button>
+                </div>
             </div>
-            <div id="ability-buttons" class="ability-btn-group"></div>
         </div>
     </div>
 
-    <!-- 結算畫面 -->
-    <div id="screen-result" class="screen">
-        <div id="result-header" class="result-title"></div>
-        <p id="result-reason" style="font-size: 18px; color: #dcdde1; margin: 20px 0;"></p>
-        <button onclick="location.reload()" style="background: #2ecc71;">回到大廳</button>
-    </div>
-</div>
-
 <script>
-// ==========================================
-// 🌐 PeerJS 網路連線模組
-// ==========================================
-let peer = null;
-let conn = null;
-let isHost = false;
-let myRole = '';
-let currentScreen = 'screen-main';
-
-let isHostReady = false;
-let isClientReady = false;
-let playerAbilities = { human: [], ghost: [] };
-
-function initPeer() {
-    const shortId = Math.random().toString(36).substring(2, 6);
-    peer = new Peer(shortId);
-
-    peer.on('open', (id) => {
-        document.getElementById('my-peer-id').innerText = id;
-        document.getElementById('conn-status').innerText = '準備就緒 (房東模式)';
-        document.getElementById('conn-status').style.color = '#2ecc71';
-    });
-
-    peer.on('error', (err) => {
-        if (err.type === 'unavailable-id') initPeer();
-    });
-
-    peer.on('connection', (c) => {
-        conn = c;
-        isHost = true;
-        myRole = 'human';
-        setupConnection();
-    });
-}
-
-function joinRoom() {
-    let hostId = document.getElementById('join-id-input').value.trim().toLowerCase();
-    if (!hostId || hostId.length !== 4) { alert("請輸入正確的 4 位數代碼！"); return; }
+    // --- 遊戲資料字典 ---
+    const ABI_DICT = { 'trap':'陷阱', 'godview':'上帝視角', 'wallhack':'穿牆', 'speed':'加速', 'obstacle':'障礙物', 'portal':'傳送門', 'fog':'迷霧' };
+    const CD_DICT = { 'trap':20000, 'godview':20000, 'wallhack':20000, 'speed':10000, 'obstacle':20000, 'portal':20000, 'fog':25000 };
     
-    conn = peer.connect(hostId);
-    isHost = false;
-    myRole = 'ghost';
-    setupConnection();
-}
+    const COLS = 20, ROWS = 15;
+    
+    // --- 核心狀態 ---
+    let grid = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+    let gameMode = ''; 
+    let myRole = 'human', oppRole = 'ghost'; 
+    let p1 = { x:0, y:0, cd:0, rooted:0, speed:220, isGod:false, isFogged:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 }; 
+    let p2 = { x:COLS-1, y:ROWS-1, cd:0, rooted:0, speed:220, isGod:false, isFogged:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 };
+    
+    let traps = [], tempWalls = [], triggeredTraps = [];
+    let p1Portals = [], p2Portals = []; 
+    let mySkills = [], oppSkills = []; 
+    let skillCds = { p1_0: 0, p1_1: 0, p2_0: 0, p2_1: 0 };
+    
+    let timeLeft = 120, exitsSpawned = false, isGameRunning = false;
+    let gameLoop, timeLoop;
 
-function setupConnection() {
-    conn.on('open', () => {
-        document.getElementById('conn-status').innerText = '連線成功！';
-        document.getElementById('role-notice').innerText = `你的身份是：${myRole === 'human' ? '人類 (逃客)' : '惡鬼 (追擊)'}`;
-        switchScreen('screen-abilities');
-    });
+    let peer = null, conn = null, isHost = false;
+    let myReady = false, oppReady = false, replayVotes = 0;
+    let navState = 'menu', navIndex = 0;
+    let testStep = 1; 
 
-    conn.on('data', (data) => handleNetworkData(data));
-
-    conn.on('close', () => {
-        alert("對手已離線！");
-        location.reload();
-    });
-}
-
-function sendNet(type, payload) {
-    if (conn && conn.open) conn.send({ type, payload });
-}
-
-function handleNetworkData(data) {
-    switch (data.type) {
-        case 'READY':
-            if (isHost) {
-                isClientReady = true;
-                playerAbilities.ghost = data.payload.abilities;
-                checkAllReady();
-            }
-            break;
-        case 'START_GAME':
-            if (!isHost) {
-                grid = data.payload.grid;
-                human = data.payload.human;
-                ghost = data.payload.ghost;
-                timeLeft = data.payload.timeLeft;
-                dynamicRenderInit();
-                setupUI();
-                switchScreen('screen-game');
-            }
-            break;
-        case 'MOVE_REQ':
-            if (isHost) handleMoveRequest(data.payload.role, data.payload.dir);
-            break;
-        case 'ABILITY_REQ':
-            if (isHost) useAbility(data.payload.idx, data.payload.role);
-            break;
-        case 'GAME_STATE':
-            if (!isHost) syncGameState(data.payload);
-            break;
-        case 'GAME_OVER':
-            triggerGameOver(data.payload.outcome, data.payload.reason);
-            break;
-    }
-}
-
-initPeer();
-
-// ==========================================
-// 🕹️ 鍵盤控制（選角頁面 + 遊戲操作）
-// ==========================================
-let selectedAbilities = [];
-
-window.addEventListener('keydown', (e) => {
-    // 1. 選角頁面的鍵盤控制 (1~6 勾選, Enter 準備)
-    if (currentScreen === 'screen-abilities') {
-        const abiList = ['trap', 'godview', 'wallhack', 'speed', 'obstacle', 'decoy'];
-        const keyMap = {'1':0, '2':1, '3':2, '4':3, '5':4, '6':5};
-        if (e.key in keyMap) {
-            let idx = keyMap[e.key];
-            let cards = document.querySelectorAll('.ability-card');
-            if (cards[idx]) toggleAbility(abiList[idx], cards[idx]);
-        } else if (e.key === 'Enter') {
-            playerReady();
+    function updateNav() {
+        document.querySelectorAll('.focused').forEach(el => el.classList.remove('focused'));
+        let items = [];
+        if(navState === 'menu') items = document.querySelectorAll('#main-menu .menu-btn');
+        else if(navState === 'skill') items = [...document.querySelectorAll('.ability-card'), document.getElementById('ready-btn')];
+        
+        if(items.length > 0) {
+            if(navIndex < 0) navIndex = items.length - 1;
+            if(navIndex >= items.length) navIndex = 0;
+            items[navIndex].classList.add('focused');
         }
-        return;
     }
 
-    // 2. 遊戲進行中的鍵盤控制
-    if (isGameOver || currentScreen !== 'screen-game') return;
-    let k = e.key.toLowerCase();
+    function startMode(mode) {
+        gameMode = mode;
+        document.getElementById('main-menu').style.display = 'none';
+        
+        if (mode === 'p2p') {
+            navState = 'lobby';
+            document.getElementById('lobby').style.display = 'block';
+            document.getElementById('net-status').style.display = 'block';
+            document.getElementById('room-controls').style.display = 'none';
+            
+            const shortId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            peer = new Peer(shortId);
+            
+            peer.on('open', () => {
+                document.getElementById('net-status').style.display = 'none';
+                document.getElementById('room-controls').style.display = 'block';
+            });
+
+            peer.on('error', (err) => {
+                if(err.type === 'peer-unavailable') {
+                    alert('找不到該房號，請確認房主是否已經建立房間！');
+                    let btn = document.getElementById('join-btn');
+                    btn.innerText = "加入"; btn.disabled = false;
+                } else { alert('連線發生錯誤，請重試！'); }
+            });
+
+            peer.on('connection', c => { 
+                conn = c; isHost = true;
+                conn.on('open', () => {
+                    alert('🔔 提示：對手已成功加入你的房間！');
+                    setupNetworkListeners();
+                    const hostIsHuman = Math.random() < 0.5;
+                    myRole = hostIsHuman ? 'human' : 'ghost';
+                    generateMaze();
+                    conn.send({ type: 'INIT', guestRole: hostIsHuman ? 'ghost' : 'human', grid: grid });
+                    enterSkillSelect();
+                });
+            });
+        } else {
+            myRole = mode === 'test' ? 'human' : (Math.random() < 0.5 ? 'human' : 'ghost');
+            if(mode === 'test') { document.getElementById('ctrl-hint').innerHTML = "<b>P1</b>:技能 1,2 | <b>P2</b>:技能 3,4"; }
+            generateMaze();
+            enterSkillSelect();
+            document.getElementById('chat-panel').style.opacity = '0.4'; 
+        }
+    }
+
+    function goBack() { 
+        if(peer) { peer.destroy(); peer = null; conn = null; }
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('skill-select').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'none';
+        document.getElementById('modal-gameover').style.display = 'none';
+        document.getElementById('main-menu').style.display = 'block';
+        
+        let btn = document.getElementById('join-btn');
+        btn.innerText = "加入"; btn.disabled = false;
+        
+        traps = []; tempWalls = []; triggeredTraps = []; p1Portals = []; p2Portals = [];
+        isGameRunning = false; clearInterval(gameLoop); clearInterval(timeLoop);
+        navState = 'menu'; updateNav();
+    }
+
+    function hostRoom() { document.getElementById('room-display').innerText = "你的房號: " + peer.id; }
     
-    let dir = null;
-    if (k === 'w' || e.key === 'ArrowUp') dir = { dx: 0, dy: -1 };
-    if (k === 's' || e.key === 'ArrowDown') dir = { dx: 0, dy: 1 };
-    if (k === 'a' || e.key === 'ArrowLeft') dir = { dx: -1, dy: 0 };
-    if (k === 'd' || e.key === 'ArrowRight') dir = { dx: 1, dy: 0 };
+    function joinRoom() {
+        const id = document.getElementById('join-id').value.trim().toUpperCase();
+        if(!id) return alert('請輸入房主給的短代碼房號');
+        let btn = document.getElementById('join-btn');
+        btn.innerText = "連線中..."; btn.disabled = true;
 
-    if (dir) {
-        if (isHost) handleMoveRequest(myRole, dir);
-        else sendNet('MOVE_REQ', { role: myRole, dir });
+        conn = peer.connect(id, { reliable: true });
+        isHost = false;
+        
+        conn.on('open', () => {
+            alert('🔔 提示：你已成功加入房間！');
+            setupNetworkListeners();
+        });
     }
 
-    if (k === '1') triggerAbilityReq(0);
-    if (k === '2') triggerAbilityReq(1);
-});
-
-function toggleAbility(abi, el) {
-    if (selectedAbilities.includes(abi)) {
-        selectedAbilities = selectedAbilities.filter(a => a !== abi); el.classList.remove('selected');
-    } else {
-        if (selectedAbilities.length >= 2) return;
-        selectedAbilities.push(abi); el.classList.add('selected');
+    function setupNetworkListeners() {
+        addChatSys("✅ 已成功連線至對手！");
+        conn.on('data', handleNetData);
+        conn.on('close', () => { alert('連線已中斷，對方可能已離開。'); goBack(); });
     }
-}
 
-function playerReady() {
-    if (selectedAbilities.length !== 2) { alert("請選滿兩個能力！"); return; }
-    document.getElementById('btn-ready').disabled = true;
-    document.getElementById('btn-ready').innerText = "等待對手準備...";
+    function addChatSys(msg) { const log = document.getElementById('chat-log'); log.innerHTML += `<div class="chat-msg sys">${msg}</div>`; log.scrollTop = log.scrollHeight; }
+    function addChatMe(msg) { const log = document.getElementById('chat-log'); log.innerHTML += `<div class="chat-msg me">我: ${msg}</div>`; log.scrollTop = log.scrollHeight; }
+    function addChatOpp(msg) { const log = document.getElementById('chat-log'); log.innerHTML += `<div class="chat-msg opp">對手: ${msg}</div>`; log.scrollTop = log.scrollHeight; }
+    function sendChat() {
+        const inp = document.getElementById('chat-input');
+        if(!inp.value.trim() || !conn) return;
+        addChatMe(inp.value);
+        conn.send({type: 'CHAT', msg: inp.value});
+        inp.value = '';
+    }
+
+    function enterSkillSelect() {
+        oppRole = myRole === 'human' ? 'ghost' : 'human';
+        document.getElementById('lobby').style.display = 'none';
+        document.getElementById('skill-select').style.display = 'block';
+        document.getElementById('ready-status').innerText = "";
+        
+        document.querySelectorAll('.ability-card').forEach(c => {
+            c.classList.remove('selected', 'p2-selected');
+            c.style.opacity = '1';
+        });
+        
+        mySkills = []; oppSkills = []; testStep = 1; myReady = false; oppReady = false;
+        
+        const announce = document.getElementById('role-announce');
+        if (gameMode === 'test') {
+            announce.innerText = `🎲 請選擇 P1 (${myRole === 'human' ? '人類' : '惡鬼'}) 的 2 個技能`;
+            announce.style.color = myRole === 'human' ? '#3498db' : '#e74c3c';
+        } else {
+            announce.innerText = `🎲 你本局陣營：${myRole === 'human' ? '人類' : '惡鬼'} \n (請選擇 2 個技能)`;
+            announce.style.color = myRole === 'human' ? '#3498db' : '#e74c3c';
+        }
+        
+        navState = 'skill'; navIndex = 0; updateNav();
+    }
+
+    function selectAbi(abi, el) {
+        if (myReady) return; 
+
+        if (gameMode === 'test') {
+            if (testStep === 1) {
+                let idx = mySkills.indexOf(abi);
+                if (idx > -1) { mySkills.splice(idx, 1); el.classList.remove('selected'); }
+                else if (mySkills.length < 2) { mySkills.push(abi); el.classList.add('selected'); }
+                
+                if (mySkills.length === 2) {
+                    testStep = 2;
+                    setTimeout(() => {
+                        document.querySelectorAll('.ability-card').forEach(c => c.classList.remove('selected'));
+                        document.getElementById('role-announce').innerText = `🎲 請選擇 P2 (${oppRole === 'human' ? '人類' : '惡鬼'}) 的 2 個技能`;
+                        document.getElementById('role-announce').style.color = oppRole === 'human' ? '#3498db' : '#e74c3c';
+                    }, 200);
+                }
+            } else if (testStep === 2) {
+                let idx = oppSkills.indexOf(abi);
+                if (idx > -1) { oppSkills.splice(idx, 1); el.classList.remove('p2-selected'); }
+                else if (oppSkills.length < 2) { oppSkills.push(abi); el.classList.add('p2-selected'); }
+                
+                if (oppSkills.length === 2) {
+                    document.getElementById('role-announce').innerText = `✅ 雙方皆已選定 2 個技能，請點擊下方確認！`;
+                    document.getElementById('role-announce').style.color = '#f1c40f';
+                }
+            }
+        } else {
+            let idx = mySkills.indexOf(abi);
+            if (idx > -1) { 
+                mySkills.splice(idx, 1); 
+                el.classList.remove('selected'); 
+            } else if (mySkills.length < 2) { 
+                mySkills.push(abi); 
+                el.classList.add('selected'); 
+            }
+        }
+    }
+
+    function playerReady() {
+        if (mySkills.length < 2) return alert('請選擇 2 個能力！');
+        if (gameMode === 'test' && oppSkills.length < 2) return alert('請為 P2 也選擇 2 個能力！');
+        
+        myReady = true;
+        document.querySelectorAll('.ability-card').forEach(c => c.style.opacity = '0.5');
+
+        if (gameMode === 'p2p') {
+            document.getElementById('ready-status').innerText = "等待對手確認...";
+            conn.send({ type: 'READY', skills: mySkills });
+            if(oppReady && isHost) { applyRoles(); startGame(); conn.send({type: 'START_GAME', skills: mySkills}); }
+        } else {
+            if (gameMode === 'pve') {
+                let allAbis = Object.keys(ABI_DICT);
+                allAbis.sort(() => Math.random() - 0.5);
+                oppSkills = [allAbis[0], allAbis[1]];
+            }
+            oppReady = true; applyRoles(); startGame();
+        }
+    }
+
+    function handleNetData(data) {
+        if(data.type === 'CHAT') addChatOpp(data.msg);
+        if(data.type === 'INIT') { grid = data.grid; myRole = data.guestRole; enterSkillSelect(); }
+        if(data.type === 'READY') { 
+            oppReady = true; 
+            oppSkills = data.skills;
+            if(myReady && isHost) { applyRoles(); startGame(); conn.send({type: 'START_GAME', skills: mySkills}); }
+        }
+        if(data.type === 'START_GAME') { if(data.skills) oppSkills = data.skills; applyRoles(); startGame(); }
+        
+        if(data.type === 'MOVE') { 
+            p2.x = data.x; 
+            p2.y = data.y; 
+            if(data.rooted !== undefined) p2.rooted = data.rooted; 
+        }
+        
+        if(data.type === 'CAST') triggerOpponentSkill(data.skill, data.x, data.y);
+        
+        if(data.type === 'SYNC_OBJ') { 
+            traps = data.traps; 
+            tempWalls = data.tempWalls; 
+            grid = data.grid; 
+            if(data.triggeredTraps) triggeredTraps = data.triggeredTraps;
+            if(data.p1Portals) p2Portals = data.p1Portals; 
+            if(data.p1Rooted !== undefined) p2.rooted = data.p1Rooted; 
+        }
+        
+        if(data.type === 'OVER') endGame(data.winner, data.msg);
+        if(data.type === 'REPLAY_REQ') { replayVotes++; checkReplay(); }
+    }
+
+    function applyRoles() {
+        if(myRole === 'human') { p1.x=0; p1.y=0; p2.x=COLS-1; p2.y=ROWS-1; p1.speed=230; p2.speed=190; }
+        else { p2.x=0; p2.y=0; p1.x=COLS-1; p1.y=ROWS-1; p1.speed=190; p2.speed=230; }
+    }
+
+    function generateMaze() {
+        while (true) {
+            grid = Array.from({length: ROWS}, () => Array(COLS).fill(0));
+            let wallsPlaced = 0;
+            while (wallsPlaced < 55) { 
+                let r = Math.floor(Math.random() * ROWS), c = Math.floor(Math.random() * COLS);
+                if ((r < 2 && c < 2) || (r > ROWS - 3 && c > COLS - 3)) continue; 
+                if (grid[r][c] === 0) { grid[r][c] = 1; wallsPlaced++; }
+            }
+            if (checkConnectivity()) break;
+        }
+    }
     
-    if (isHost) {
-        isHostReady = true;
-        playerAbilities.human = selectedAbilities;
-        checkAllReady();
-    } else {
-        sendNet('READY', { abilities: selectedAbilities });
+    function checkConnectivity() {
+        let visited = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+        let q = [[0,0]]; visited[0][0] = true; let count = 1; let totalEmpty = ROWS * COLS - 55; 
+        while(q.length > 0) {
+            let [r, c] = q.shift();
+            for(let [dr, dc] of [[1,0], [-1,0], [0,1], [0,-1]]) {
+                let nr = r+dr, nc = c+dc;
+                if (nr>=0 && nr<ROWS && nc>=0 && nc<COLS && !visited[nr][nc] && grid[nr][nc] === 0) {
+                    visited[nr][nc] = true; q.push([nr,nc]); count++;
+                }
+            }
+        }
+        return count === totalEmpty;
     }
-}
 
-function checkAllReady() {
-    if (isHost && isHostReady && isClientReady) {
-        startGame();
+    function startGame() {
+        document.getElementById('skill-select').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'flex';
+        document.getElementById('role-tag').innerText = myRole === 'human' ? '陣營：人類 (藍)' : '陣營：惡鬼 (紅)';
+        navState = 'game'; 
+        
+        p1.trapCharges = 1; p1.trapCd = 0; p1.isFogged = false;
+        p2.trapCharges = 1; p2.trapCd = 0; p2.isFogged = false;
+        p1Portals = []; p2Portals = [];
+
+        const name1 = ABI_DICT[mySkills[0]] || "未選擇";
+        const name2 = ABI_DICT[mySkills[1]] || "未選擇";
+        const name3 = ABI_DICT[oppSkills[0]] || "未選擇";
+        const name4 = ABI_DICT[oppSkills[1]] || "未選擇";
+
+        const box = document.getElementById('skill-box');
+        if (gameMode === 'test') {
+            box.innerHTML = `
+                <button class="ability-btn" id="btn-p1-0" disabled>P1技1: ${name1} (按 1)</button>
+                <button class="ability-btn" id="btn-p1-1" disabled style="margin-bottom:6px;">P1技2: ${name2} (按 2)</button>
+                <button class="ability-btn" id="btn-p2-0" disabled style="background:#c0392b;">P2技1: ${name3} (按 3)</button>
+                <button class="ability-btn" id="btn-p2-1" disabled style="background:#c0392b;">P2技2: ${name4} (按 4)</button>
+            `;
+        } else {
+            box.innerHTML = `
+                <button class="ability-btn" id="btn-p1-0" disabled>技1: ${name1} (按 1)</button>
+                <button class="ability-btn" id="btn-p1-1" disabled>技2: ${name2} (按 2)</button>
+            `;
+        }
+
+        const board = document.getElementById('board'); board.innerHTML = '';
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                let cell = document.createElement('div'); cell.className = 'cell'; cell.id = `c-${c}-${r}`;
+                cell.style.left = `calc(${c} * var(--cell-size))`; 
+                cell.style.top = `calc(${r} * var(--cell-size))`; 
+                board.appendChild(cell);
+            }
+        }
+        board.innerHTML += `<div id="p1" class="entity ${myRole}"></div>`;
+        board.innerHTML += `<div id="p2" class="entity ${oppRole}"></div>`;
+
+        isGameRunning = true;
+        gameLoop = setInterval(gameLogicTick, 15);
+        timeLoop = setInterval(gameTimeTick, 1000);
     }
-}
 
-// ==========================================
-// ⚙️ 遊戲核心邏輯
-// ==========================================
-const CONFIG = {
-    MAP_SIZE: 15, TOTAL_TIME: 120, EXIT_TIME_LEFT: 30,
-    HUMAN_BASE_SPEED: 270, GHOST_BASE_SPEED: 260, SPEED_BUFF_VALUE: 185,
-    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000 },
-    CD: { trap: 30000, godview: 40000, wallhack: 30000, speed: 20000, obstacle: 30000, decoy: 30000 }
-};
+    function showMsg(m) { const el = document.getElementById('msg-display'); el.innerText = m; setTimeout(()=>el.innerText='', 3000); }
 
-const SIZE = CONFIG.MAP_SIZE;
-const CELL_PX = 32;
+    function gameLogicTick() {
+        if(!isGameRunning) return;
+        
+        if(p1.cd > 0) p1.cd -= 15; if(p1.rooted > 0) p1.rooted -= 15;
+        if(p2.cd > 0) p2.cd -= 15; if(p2.rooted > 0) p2.rooted -= 15;
+        if(p1.teleportCd > 0) p1.teleportCd -= 15;
+        if(p2.teleportCd > 0) p2.teleportCd -= 15;
 
-let grid = [], fogGrid = [];
-let gameInterval, logicInterval;
-let timeLeft = CONFIG.TOTAL_TIME;
-let isGameOver = false;
+        // 【修改】陷阱無上限，直接無腦加
+        if (mySkills.includes('trap')) {
+            p1.trapCd += 15;
+            if (p1.trapCd >= 20000) { p1.trapCharges++; p1.trapCd = 0; showMsg(`陷阱次數 +1 (現有: ${p1.trapCharges})`); }
+        }
+        if (oppSkills.includes('trap')) {
+            p2.trapCd += 15;
+            if (p2.trapCd >= 20000) { p2.trapCharges++; p2.trapCd = 0; }
+        }
 
-let human = { x: 0, y: 0, speed: CONFIG.HUMAN_BASE_SPEED, cooldown: 0, rooted: 0 };
-let ghost = { x: SIZE-1, y: SIZE-1, speed: CONFIG.GHOST_BASE_SPEED, cooldown: 0, rooted: 0 };
-let decoys = [], traps = [], tempWalls = [];
-let pendingTrap = { human: null, ghost: null };
-let pendingObstacle = { human: null, ghost: null };
+        [0, 1].forEach(idx => {
+            let key = `p1_${idx}`;
+            let sk = mySkills[idx];
+            let btn = document.getElementById(`btn-p1-${idx}`);
+            let skName = ABI_DICT[sk] || "未選擇";
+            
+            if(skillCds[key] > 0) {
+                skillCds[key] -= 15;
+                btn.innerText = `冷卻 (${Math.ceil(skillCds[key]/1000)}s)`;
+                btn.disabled = true;
+            } else {
+                let extraTxt = (sk === 'trap') ? ` [數量:${p1.trapCharges}]` : '';
+                btn.innerText = `${gameMode==='test'?'P1':''}技${idx+1}: ${skName}${extraTxt} (按 ${idx+1})`;
+                btn.disabled = (!sk);
+            }
+        });
 
-let abilitiesState = {
-    human: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} },
-    ghost: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} }
-};
+        if(gameMode === 'test') {
+            [0, 1].forEach(idx => {
+                let key = `p2_${idx}`;
+                let sk = oppSkills[idx];
+                let btn = document.getElementById(`btn-p2-${idx}`);
+                let skName = ABI_DICT[sk] || "未選擇";
 
-function startGame() {
-    generateMaze();
-    dynamicRenderInit();
-    setupUI();
-    switchScreen('screen-game');
+                if(skillCds[key] > 0) {
+                    skillCds[key] -= 15;
+                    btn.innerText = `冷卻 (${Math.ceil(skillCds[key]/1000)}s)`;
+                    btn.disabled = true;
+                } else {
+                    let extraTxt = (sk === 'trap') ? ` [數量:${p2.trapCharges}]` : '';
+                    btn.innerText = `P2技${idx+1}: ${skName}${extraTxt} (按 ${idx+3})`;
+                    btn.disabled = (!sk);
+                }
+            });
+        }
 
-    // 房東廣播「開始遊戲」與初始地圖給客人
-    sendNet('START_GAME', { grid, human, ghost, timeLeft });
+        traps.forEach(t => { let o = t.owner===myRole?p1:p2; if(!t.active && (o.x!==t.x || o.y!==t.y)) t.active = true; });
+        tempWalls.forEach(w => { w.timeLeft-=15; let o = w.owner===myRole?p1:p2; if(!w.active && (o.x!==w.x || o.y!==w.y)) w.active = true; });
+        tempWalls = tempWalls.filter(w => w.timeLeft > 0);
+        
+        triggeredTraps.forEach(t => t.timeLeft -= 15);
+        triggeredTraps = triggeredTraps.filter(t => t.timeLeft > 0);
 
-    gameInterval = setInterval(() => {
-        if (!isHost) return;
+        checkPortals(p1, p1Portals);
+        checkPortals(p2, p2Portals);
+
+        if(gameMode === 'pve' && p2.cd <= 0 && p2.rooted <= 0) {
+            let dx = 0, dy = 0;
+            if(Math.random() < 0.1) {
+                if(p1.x > p2.x && isWalkable(p2.x+1, p2.y)) dx = 1;
+                else if(p1.x < p2.x && isWalkable(p2.x-1, p2.y)) dx = -1;
+                else if(p1.y > p2.y && isWalkable(p2.x, p2.y+1)) dy = 1;
+                else if(p1.y < p2.y && isWalkable(p2.x, p2.y-1)) dy = -1;
+            } else {
+                let dirs = [[0,1],[0,-1],[1,0],[-1,0]].filter(d => isWalkable(p2.x+d[0], p2.y+d[1]));
+                if(dirs.length > 0) { let c = dirs[Math.floor(Math.random()*dirs.length)]; dx = c[0]; dy = c[1]; }
+            }
+            if(dx!==0 || dy!==0) moveP2(dx, dy); 
+        }
+
+        checkInteractions();
+        render();
+    }
+
+    function checkPortals(playerObj, portalArr) {
+        if(portalArr.length === 2 && playerObj.teleportCd <= 0) {
+            if(playerObj.x === portalArr[0].x && playerObj.y === portalArr[0].y) {
+                playerObj.x = portalArr[1].x; playerObj.y = portalArr[1].y;
+                playerObj.teleportCd = 1000;
+                if(playerObj === p1) { showMsg('通過傳送門！'); if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted}); }
+            } else if(playerObj.x === portalArr[1].x && playerObj.y === portalArr[1].y) {
+                playerObj.x = portalArr[0].x; playerObj.y = portalArr[0].y;
+                playerObj.teleportCd = 1000;
+                if(playerObj === p1) { showMsg('通過傳送門！'); if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted}); }
+            }
+        }
+    }
+
+    function gameTimeTick() {
+        if(!isGameRunning) return;
         timeLeft--;
-        if (timeLeft === CONFIG.EXIT_TIME_LEFT) spawnExits();
-        if (timeLeft <= 0) endGame('draw', '時間到！無人逃離，平局收場。');
-    }, 1000);
-
-    logicInterval = setInterval(gameLogicTick, 15);
-}
-
-function triggerAbilityReq(idx) {
-    if (isHost) useAbility(idx, myRole);
-    else sendNet('ABILITY_REQ', { idx, role: myRole });
-}
-
-function handleMoveRequest(role, dir) {
-    let entity = role === 'human' ? human : ghost;
-    if (entity.rooted <= 0 && entity.cooldown <= 0) {
-        attemptMove(entity, dir.dx, dir.dy, role);
+        let m = Math.floor(timeLeft/60), s = timeLeft%60;
+        document.getElementById('time-tag').innerText = `${m<10?'0':''}${m}:${s<10?'0':''}${s}`;
+        
+        if(timeLeft === 30 && !exitsSpawned) { if(gameMode !== 'p2p' || isHost) spawnExits(); }
+        if(timeLeft <= 0) broadcastOver('draw', '時間耗盡，雙方平手！');
     }
-}
 
-function attemptMove(entity, dx, dy, role) {
-    let nx = entity.x + dx, ny = entity.y + dy;
-    if (nx < 0 || nx >= SIZE || ny < 0 || ny >= SIZE) return;
+    function spawnExits() {
+        exitsSpawned = true; showMsg("【警報】出口已開啟！");
+        let edges = [];
+        for(let i=1; i<COLS-1; i++) {
+            if(grid[0][i]===0) edges.push([0, i]); 
+            if(grid[ROWS-1][i]===0) edges.push([ROWS-1, i]);
+        }
+        for(let i=1; i<ROWS-1; i++) {
+            if(grid[i][0]===0) edges.push([i, 0]); 
+            if(grid[i][COLS-1]===0) edges.push([i, COLS-1]);
+        }
+        
+        edges.sort(()=>Math.random()-0.5);
+        let e1 = edges[0], e2 = null;
+        for(let i=1; i<edges.length; i++) {
+            let dist = Math.abs(edges[i][0] - e1[0]) + Math.abs(edges[i][1] - e1[1]);
+            if(dist >= 9) { e2 = edges[i]; break; }
+        }
+        if(!e2 && edges.length > 1) e2 = edges[edges.length - 1]; 
 
-    let st = abilitiesState[role];
-    let isWall = (grid[ny][nx] === 1 || grid[ny][nx] === 2);
+        if(e1) grid[e1[0]][e1[1]] = 3; 
+        if(e2) grid[e2[0]][e2[1]] = 3;
+        syncObjs();
+    }
 
-    if (st.wallhackReady && isWall) {
-        let nnx = nx + dx, nny = ny + dy;
-        if (nnx >= 0 && nnx < SIZE && nny >= 0 && nny < SIZE && grid[nny][nnx] !== 1 && grid[nny][nnx] !== 2) {
-            entity.x = nnx; entity.y = nny; entity.cooldown = entity.speed; st.wallhackReady = false;
+    window.addEventListener('keydown', (e) => {
+        if(["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].indexOf(e.code) > -1) { e.preventDefault(); }
+        if(document.activeElement.tagName === 'INPUT') return; 
+
+        if(navState === 'menu' || navState === 'skill') {
+            if(e.key === 'w' || e.key === 'ArrowUp') { navIndex -= 1; updateNav(); }
+            if(e.key === 's' || e.key === 'ArrowDown') { navIndex += 1; updateNav(); }
+            if(e.key === 'Enter' || e.key === ' ') { let focused = document.querySelector('.focused'); if(focused) focused.click(); }
             return;
         }
-    }
-    if (isWall) return;
-    entity.x = nx; entity.y = ny; entity.cooldown = entity.speed;
-}
 
-function gameLogicTick() {
-    if (!isHost || isGameOver) return;
-    let tick = 15;
+        if(navState === 'game' && isGameRunning) {
+            let dx1 = 0, dy1 = 0;
+            if(e.key === 'w' || e.key === 'W') dy1 = -1;
+            if(e.key === 's' || e.key === 'S') dy1 = 1;
+            if(e.key === 'a' || e.key === 'A') dx1 = -1;
+            if(e.key === 'd' || e.key === 'D') dx1 = 1;
 
-    updateEntityTick(human, tick, 'human');
-    updateEntityTick(ghost, tick, 'ghost');
-    checkPendingPlacement('human');
-    checkPendingPlacement('ghost');
-
-    for (let i = tempWalls.length - 1; i >= 0; i--) {
-        tempWalls[i].timeLeft -= tick;
-        if (tempWalls[i].timeLeft <= 0) {
-            if(grid[tempWalls[i].y][tempWalls[i].x] === 2) grid[tempWalls[i].y][tempWalls[i].x] = 0;
-            tempWalls.splice(i, 1);
-        }
-    }
-
-    checkTrapsTrigger();
-
-    if (human.x === ghost.x && human.y === ghost.y && ghost.rooted <= 0) {
-        endGame('ghost_win', '惡鬼成功捕捉了人類！');
-        return;
-    }
-    if (grid[human.y][human.x] === 3) {
-        endGame('human_win', '人類成功找到出口逃脫！');
-        return;
-    }
-
-    broadcastState();
-    updateVision(); render(); updateUI();
-}
-
-function broadcastState() {
-    sendNet('GAME_STATE', { grid, human, ghost, traps, tempWalls, decoys, timeLeft, abilitiesState });
-}
-
-function syncGameState(state) {
-    grid = state.grid; human = state.human; ghost = state.ghost;
-    traps = state.traps; tempWalls = state.tempWalls; decoys = state.decoys;
-    timeLeft = state.timeLeft; abilitiesState = state.abilitiesState;
-    updateVision(); render(); updateUI();
-}
-
-function endGame(winner, reason) {
-    let outcomeHost = winner === 'human_win' ? 'win' : 'lose';
-    let outcomeClient = winner === 'human_win' ? 'lose' : 'win';
-
-    triggerGameOver(outcomeHost, reason);
-    sendNet('GAME_OVER', { outcome: outcomeClient, reason });
-}
-
-function updateEntityTick(entity, tick, role) {
-    if(entity.cooldown > 0) entity.cooldown -= tick;
-    if(entity.rooted > 0) entity.rooted -= tick;
-    let st = abilitiesState[role];
-    if(st.godviewTime > 0) st.godviewTime -= tick;
-    for(let abi in st.cds) { if(st.cds[abi] > 0) st.cds[abi] -= tick; }
-    if(st.speedTime > 0) { st.speedTime -= tick; entity.speed = CONFIG.SPEED_BUFF_VALUE; } 
-    else { entity.speed = role === 'human' ? CONFIG.HUMAN_BASE_SPEED : CONFIG.GHOST_BASE_SPEED; }
-}
-
-function checkPendingPlacement(role) {
-    let entity = role === 'human' ? human : ghost;
-    let pTrap = pendingTrap[role];
-    if (pTrap && (entity.x !== pTrap.x || entity.y !== pTrap.y)) {
-        traps.push({x: pTrap.x, y: pTrap.y, owner: role});
-        pendingTrap[role] = null;
-    }
-    let pObs = pendingObstacle[role];
-    if (pObs && (entity.x !== pObs.x || entity.y !== pObs.y)) {
-        grid[pObs.y][pObs.x] = 2;
-        tempWalls.push({x: pObs.x, y: pObs.y, timeLeft: CONFIG.DURATION.obstacle});
-        pendingObstacle[role] = null;
-    }
-}
-
-function checkTrapsTrigger() {
-    for (let i = traps.length - 1; i >= 0; i--) {
-        let t = traps[i];
-        let victim = (t.owner === 'ghost' && human.x === t.x && human.y === t.y) ? human :
-                     (t.owner === 'human' && ghost.x === t.x && ghost.y === t.y) ? ghost : null;
-        if (victim) {
-            victim.rooted = CONFIG.DURATION.trapRoot;
-            traps.splice(i, 1);
-        }
-    }
-}
-
-function useAbility(idx, role) {
-    let abi = playerAbilities[role] ? playerAbilities[role][idx] : null;
-    let st = abilitiesState[role];
-    let entity = role === 'human' ? human : ghost;
-    if (!abi || st.cds[abi] > 0) return;
-
-    if(abi === 'speed') st.speedTime = CONFIG.DURATION.speed;
-    else if (abi === 'godview') st.godviewTime = CONFIG.DURATION.godview;
-    else if (abi === 'wallhack') st.wallhackReady = true;
-    else if (abi === 'trap') pendingTrap[role] = { x: entity.x, y: entity.y };
-    else if (abi === 'obstacle') pendingObstacle[role] = { x: entity.x, y: entity.y };
-
-    st.cds[abi] = CONFIG.CD[abi];
-}
-
-function generateMaze() {
-    grid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
-    let walls = 0;
-    while (walls < 50) {
-        let r = Math.floor(Math.random() * SIZE), c = Math.floor(Math.random() * SIZE);
-        if ((r < 2 && c < 2) || (r > SIZE - 3 && c > SIZE - 3)) continue;
-        if (grid[r][c] === 0) { grid[r][c] = 1; walls++; }
-    }
-}
-
-function spawnExits() {
-    grid[0][Math.floor(SIZE/2)] = 3;
-    grid[SIZE-1][Math.floor(SIZE/2)] = 3;
-}
-
-function updateVision() {
-    fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(1));
-    if (abilitiesState[myRole].godviewTime > 0) {
-        fogGrid = Array.from({length: SIZE}, () => Array(SIZE).fill(0));
-        return;
-    }
-    let p = myRole === 'human' ? human : ghost;
-    for(let dy = -3; dy <= 3; dy++) {
-        for(let dx = -3; dx <= 3; dx++) {
-            let ty = p.y + dy, tx = p.x + dx;
-            if(ty>=0 && ty<SIZE && tx>=0 && tx<SIZE) fogGrid[ty][tx] = 0;
-        }
-    }
-}
-
-function dynamicRenderInit() {
-    let board = document.getElementById('board'); board.innerHTML = '';
-    for(let r=0; r<SIZE; r++) {
-        for(let c=0; c<SIZE; c++) {
-            let cell = document.createElement('div'); cell.id = `cell-${r}-${c}`; cell.className = 'cell';
-            cell.style.top = r * CELL_PX + 'px'; cell.style.left = c * CELL_PX + 'px'; board.appendChild(cell);
-        }
-    }
-    let hEl = document.createElement('div'); hEl.id = 'html-human'; hEl.className = 'entity human'; board.appendChild(hEl);
-    let gEl = document.createElement('div'); gEl.id = 'html-ghost'; gEl.className = 'entity ghost'; board.appendChild(gEl);
-}
-
-function render() {
-    let passableWalls = getPassableWalls();
-    for(let r=0; r<SIZE; r++) {
-        for(let c=0; c<SIZE; c++) {
-            let cell = document.getElementById(`cell-${r}-${c}`); if(!cell) continue;
-            let isVisible = fogGrid[r][c] === 0 || grid[r][c] === 3;
-            let isPassable = passableWalls.some(w => w.x === c && w.y === r);
-
-            // 陷阱顯示：玩家可以看到自己下的陷阱，或視線內的陷阱
-            let trapHere = traps.find(t => t.x === c && t.y === r);
-            let showTrap = trapHere && (trapHere.owner === myRole || isVisible);
-
-            cell.className = 'cell';
-            if (!isVisible && grid[r][c] !== 3 && !isPassable && !showTrap) {
-                cell.classList.add('fog');
+            if (gameMode === 'test') {
+                let dx2 = 0, dy2 = 0;
+                if(e.key === 'ArrowUp') dy2 = -1;
+                if(e.key === 'ArrowDown') dy2 = 1;
+                if(e.key === 'ArrowLeft') dx2 = -1;
+                if(e.key === 'ArrowRight') dx2 = 1;
+                if(dx2 !== 0 || dy2 !== 0) moveP2(dx2, dy2);
             } else {
-                if(grid[r][c] === 1) cell.classList.add('wall');
-                if(grid[r][c] === 2) cell.classList.add('temp-wall');
-                if(grid[r][c] === 3) cell.classList.add('exit');
-                if(showTrap) cell.classList.add('trap');
-                if(isPassable) cell.classList.add('passable-wall');
+                if(e.key === 'ArrowUp') dy1 = -1;
+                if(e.key === 'ArrowDown') dy1 = 1;
+                if(e.key === 'ArrowLeft') dx1 = -1;
+                if(e.key === 'ArrowRight') dx1 = 1;
+            }
+
+            if(dx1 !== 0 || dy1 !== 0) moveP1(dx1, dy1);
+
+            if(e.key === '1') useSkill(0, p1, myRole);
+            if(e.key === '2') useSkill(1, p1, myRole);
+            
+            if(gameMode === 'test') {
+                if(e.key === '3') useSkill(0, p2, oppRole);
+                if(e.key === '4') useSkill(1, p2, oppRole);
+            }
+        }
+    });
+
+    function isWalkable(x, y) {
+        if(x<0 || x>=COLS || y<0 || y>=ROWS || grid[y][x]===1) return false;
+        if(tempWalls.some(w => w.active && w.x===x && w.y===y)) return false;
+        return true;
+    }
+
+    function moveP1(dx, dy) {
+        if(p1.rooted > 0 || p1.cd > 0) return;
+        let nx = p1.x + dx, ny = p1.y + dy;
+        
+        if(isWalkable(nx, ny)) {
+            p1.x = nx; p1.y = ny; p1.cd = p1.speed;
+            if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted});
+        } 
+        else if(p1.wallBuff) {
+            let isNormalWall = (ny>=0 && ny<ROWS && nx>=0 && nx<COLS && grid[ny][nx] === 1);
+            let isTempWall = tempWalls.some(w => w.active && w.x === nx && w.y === ny);
+            
+            if (isNormalWall || isTempWall) {
+                let nnx = nx + dx, nny = ny + dy;
+                if(isWalkable(nnx, nny)) {
+                    p1.x = nnx; p1.y = nny; p1.cd = p1.speed;
+                    p1.wallBuff = false; 
+                    showMsg('穿牆成功！');
+                    if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted});
+                }
             }
         }
     }
-    let hEl = document.getElementById('html-human');
-    hEl.style.top = human.y * CELL_PX + 'px'; hEl.style.left = human.x * CELL_PX + 'px';
-    let gEl = document.getElementById('html-ghost');
-    gEl.style.top = ghost.y * CELL_PX + 'px'; gEl.style.left = ghost.x * CELL_PX + 'px';
-}
 
-function getPassableWalls() {
-    let p = myRole === 'human' ? human : ghost;
-    let st = abilitiesState[myRole];
-    let passable = [];
-    if (!st || !st.wallhackReady) return passable;
-
-    let dirs = [[0, -1], [0, 1], [-1, 0], [1, 0]];
-    for (let [dx, dy] of dirs) {
-        let wx = p.x + dx, wy = p.y + dy, tx = p.x + dx * 2, ty = p.y + dy * 2;
-        if (wx >= 0 && wx < SIZE && wy >= 0 && wy < SIZE && (grid[wy][wx] === 1 || grid[wy][wx] === 2)) {
-            if (tx >= 0 && tx < SIZE && ty >= 0 && ty < SIZE && grid[ty][tx] !== 1 && grid[ty][tx] !== 2) {
-                passable.push({ x: wx, y: wy });
+    function moveP2(dx, dy) {
+        if(p2.rooted > 0 || p2.cd > 0) return;
+        let nx = p2.x + dx, ny = p2.y + dy;
+        if(isWalkable(nx, ny)) { 
+            p2.x = nx; p2.y = ny; p2.cd = p2.speed; 
+        }
+        else if(p2.wallBuff) {
+            let isNormalWall = (ny>=0 && ny<ROWS && nx>=0 && nx<COLS && grid[ny][nx] === 1);
+            let isTempWall = tempWalls.some(w => w.active && w.x === nx && w.y === ny);
+            
+            if (isNormalWall || isTempWall) {
+                let nnx = nx + dx, nny = ny + dy;
+                if(isWalkable(nnx, nny)) {
+                    p2.x = nnx; p2.y = nny; p2.cd = p2.speed;
+                    p2.wallBuff = false; 
+                    showMsg('P2 穿牆成功！');
+                }
             }
         }
     }
-    return passable;
-}
 
-function switchScreen(id) {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    document.getElementById(id).classList.add('active');
-    currentScreen = id;
-}
+    function useSkill(idx, playerObj, role) {
+        let skillsArr = playerObj === p1 ? mySkills : oppSkills;
+        let key = playerObj === p1 ? `p1_${idx}` : `p2_${idx}`;
+        let sk = skillsArr[idx];
+        if(!sk || skillCds[key] > 0) return;
 
-function setupUI() {
-    document.getElementById('role-display').innerText = myRole === 'human' ? '陣營: 人類' : '陣營: 惡鬼';
-    let container = document.getElementById('ability-buttons'); container.innerHTML = '';
-    selectedAbilities.forEach((abi, idx) => {
-        let btn = document.createElement('button'); btn.className = 'ability-btn'; btn.id = 'btn-abi-' + idx;
-        btn.onclick = () => triggerAbilityReq(idx); container.appendChild(btn);
-    });
-}
+        let success = executeSkillLogic(playerObj, role, sk);
+        if(success) {
+            skillCds[key] = CD_DICT[sk];
+            if(gameMode==='p2p' && playerObj === p1) { 
+                conn.send({type:'CAST', skill:sk, x:p1.x, y:p1.y}); 
+                syncObjs(); 
+            }
+        }
+    }
 
-function updateUI() {
-    let st = abilitiesState[myRole]; if(!st) return;
-    let m = Math.floor(timeLeft / 60), s = timeLeft % 60;
-    document.getElementById('time-display').innerText = `${m<10?'0':''}${m}:${s<10?'0':''}${s}`;
-    
-    let abiNames = { trap:'陷阱', godview:'透視', wallhack:'穿牆', speed:'加速', obstacle:'障礙', decoy:'假人' };
-    selectedAbilities.forEach((abi, idx) => {
-        let btn = document.getElementById('btn-abi-' + idx); if(!btn) return;
-        if(st.cds[abi] > 0) { btn.disabled = true; btn.innerText = `${abiNames[abi]} (${Math.ceil(st.cds[abi] / 1000)}s)`; }
-        else { btn.disabled = false; btn.innerText = `${abiNames[abi]} (按 ${idx+1})`; }
-    });
-}
+    function executeSkillLogic(playerObj, role, sk) {
+        let success = true;
+        if(sk === 'trap') {
+            if(playerObj.trapCharges <= 0) {
+                if(playerObj === p1) showMsg('陷阱數量不足！等待充能。');
+                return false;
+            }
+            let hasObstacle = tempWalls.some(w => w.x === playerObj.x && w.y === playerObj.y);
+            if(grid[playerObj.y][playerObj.x] === 3 || hasObstacle) {
+                if(playerObj === p1) showMsg('此處無法放置陷阱！');
+                return false;
+            } 
+            traps.push({x:playerObj.x, y:playerObj.y, owner:role, active:false}); 
+            playerObj.trapCharges--;
+            if(playerObj === p1) showMsg(`陷阱已放置！(剩餘次數: ${playerObj.trapCharges})`);
+        } else if(sk === 'obstacle') {
+            if(grid[playerObj.y][playerObj.x] === 3) return false;
+            tempWalls.push({x:playerObj.x, y:playerObj.y, owner:role, active:false, timeLeft:3000}); 
+            if(playerObj === p1) showMsg('障礙物已生成！離開後生效。');
+        } else if(sk === 'portal') {
+            let pArr = playerObj === p1 ? p1Portals : p2Portals;
+            if(pArr.length < 2) {
+                pArr.push({x: playerObj.x, y: playerObj.y});
+                if(playerObj === p1) showMsg(`傳送門 #${pArr.length} 已放置！`);
+            } else {
+                pArr[0] = pArr[1];
+                pArr[1] = {x: playerObj.x, y: playerObj.y};
+                if(playerObj === p1) showMsg('傳送門位置已更新！');
+            }
+        } else if(sk === 'speed') {
+            playerObj.speed = 90; setTimeout(()=> playerObj.speed = role==='human'?230:190, 3000); 
+            if(playerObj === p1) showMsg('加速啟動！');
+        } else if(sk === 'godview') {
+            playerObj.isGod = true; setTimeout(()=> playerObj.isGod = false, 2000); 
+            if(playerObj === p1) showMsg('上帝視角啟動！');
+        } else if(sk === 'wallhack') {
+            playerObj.wallBuff = true; 
+            if(playerObj === p1) showMsg('穿牆就緒！請往牆壁或障礙物移動。'); 
+        } else if(sk === 'fog') {
+            let opponent = (playerObj === p1) ? p2 : p1;
+            opponent.isFogged = true;
+            if(opponent.isGod) opponent.isGod = false; 
+            setTimeout(() => opponent.isFogged = false, 2000);
+            if(playerObj === p1) showMsg('迷霧施放！對手視野已被遮蔽！');
+        }
+        return success;
+    }
 
-function triggerGameOver(outcome, msg) {
-    isGameOver = true;
-    clearInterval(gameInterval); clearInterval(logicInterval);
-    let headerEl = document.getElementById('result-header');
-    if (outcome === 'win') { headerEl.innerText = "你贏了 🎉"; headerEl.className = "result-title win-text"; }
-    else if (outcome === 'lose') { headerEl.innerText = "你輸了 💀"; headerEl.className = "result-title lose-text"; }
-    else { headerEl.innerText = "平局 🤝"; headerEl.className = "result-title draw-text"; }
-    document.getElementById('result-reason').innerText = msg;
-    switchScreen('screen-result');
-}
+    function triggerOpponentSkill(sk, x, y) {
+        if(sk==='trap') traps.push({x:x, y:y, owner:oppRole, active:false});
+        if(sk==='obstacle') tempWalls.push({x:x, y:y, owner:oppRole, active:false, timeLeft:3000});
+        if(sk==='portal') {
+            if(p2Portals.length < 2) p2Portals.push({x:x, y:y});
+            else { p2Portals[0] = p2Portals[1]; p2Portals[1] = {x:x, y:y}; }
+        }
+        if(sk==='speed') { p2.speed=90; setTimeout(()=>p2.speed=oppRole==='human'?230:190, 3000); }
+        if(sk==='fog') {
+            p1.isFogged = true;
+            if(p1.isGod) p1.isGod = false;
+            setTimeout(() => p1.isFogged = false, 2000);
+        }
+        showMsg(`對手發動了 【${ABI_DICT[sk]}】！`);
+    }
+
+    function checkInteractions() {
+        for(let i=traps.length-1; i>=0; i--) {
+            let t = traps[i];
+            if(t.active) {
+                if(p1.x===t.x && p1.y===t.y && t.owner!==myRole) { 
+                    p1.rooted=2000; 
+                    triggeredTraps.push({x: t.x, y: t.y, timeLeft: 2000, owner: t.owner}); 
+                    traps.splice(i,1); 
+                    showMsg('踩到陷阱！定身2秒'); 
+                    syncObjs();
+                }
+                else if(p2.x===t.x && p2.y===t.y && t.owner!==oppRole) { 
+                    p2.rooted=2000; 
+                    triggeredTraps.push({x: t.x, y: t.y, timeLeft: 2000, owner: t.owner}); 
+                    traps.splice(i,1); 
+                    showMsg('對手踩中你的陷阱！定身2秒'); 
+                    syncObjs();
+                }
+            }
+        }
+
+        if(p1.x === p2.x && p1.y === p2.y) {
+            let ghostObj = myRole === 'ghost' ? p1 : p2;
+            if(ghostObj.rooted <= 0) {
+                broadcastOver('ghost', '惡鬼成功捕捉了人類！');
+            } else {
+                showMsg('鬼被定身中！人類平安通過！');
+            }
+        }
+
+        let humanP = myRole === 'human' ? p1 : p2;
+        if(grid[humanP.y][humanP.x] === 3) broadcastOver('human', '人類成功從出口逃脫！');
+    }
+
+    function syncObjs() { 
+        if(gameMode==='p2p') {
+            conn.send({
+                type:'SYNC_OBJ', 
+                traps:traps, 
+                tempWalls:tempWalls, 
+                grid:grid, 
+                triggeredTraps:triggeredTraps,
+                p1Portals: p1Portals,
+                p1Rooted: p1.rooted
+            }); 
+        }
+    }
+
+    function broadcastOver(winner, msg) {
+        if(!isGameRunning) return; 
+        if(gameMode==='p2p') conn.send({type:'OVER', winner:winner, msg:msg});
+        endGame(winner, msg);
+    }
+
+    function endGame(winner, msg) {
+        isGameRunning = false; clearInterval(gameLoop); clearInterval(timeLoop);
+        
+        if (winner === 'ghost') {
+            let humanId = myRole === 'human' ? 'p1' : 'p2';
+            document.getElementById(humanId).classList.add('dead');
+        }
+
+        setTimeout(() => { 
+            const modal = document.getElementById('modal-gameover');
+            document.getElementById('go-title').innerText = winner==='human'?'人類獲勝！':(winner==='ghost'?'惡鬼獲勝！':'時間到平手！');
+            document.getElementById('go-title').style.color = winner==='human'?'#3498db':(winner==='ghost'?'#e74c3c':'#f1c40f');
+            document.getElementById('go-msg').innerText = msg;
+            modal.style.display = 'flex';
+            replayVotes = 0; document.getElementById('replay-status').innerText = "";
+        }, 600);
+    }
+
+    function voteReplay() {
+        if (gameMode === 'p2p') {
+            replayVotes++;
+            conn.send({type: 'REPLAY_REQ'});
+            document.getElementById('replay-status').innerText = "已準備！等待對手同意...";
+            checkReplay();
+        } else {
+            resetAndPlay();
+        }
+    }
+
+    function checkReplay() { if (replayVotes >= 2) resetAndPlay(); }
+
+    function resetAndPlay() {
+        document.getElementById('modal-gameover').style.display = 'none';
+        document.getElementById('game-screen').style.display = 'none';
+        traps = []; tempWalls = []; triggeredTraps = []; p1Portals = []; p2Portals = [];
+        timeLeft = 120; exitsSpawned = false;
+        myReady = false; oppReady = false; replayVotes = 0; skillCds = {p1_0:0, p1_1:0, p2_0:0, p2_1:0};
+        
+        document.getElementById('p1').classList.remove('dead');
+        document.getElementById('p2').classList.remove('dead');
+
+        if (gameMode === 'p2p') {
+            if (isHost) {
+                myRole = Math.random() < 0.5 ? 'human' : 'ghost';
+                generateMaze();
+                conn.send({ type: 'INIT', guestRole: myRole === 'human' ? 'ghost' : 'human', grid: grid });
+                enterSkillSelect();
+            } else {
+                document.getElementById('lobby').style.display = 'block';
+                document.getElementById('net-status').innerText = "等待房主重新建立迷宮...";
+                document.getElementById('net-status').style.display = 'block';
+                document.getElementById('room-controls').style.display = 'none';
+            }
+        } else {
+            generateMaze(); enterSkillSelect();
+        }
+    }
+
+    function render() {
+        let vis = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+        
+        if(!p1.isFogged) {
+            if(p1.isGod || gameMode==='test') {
+                for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) vis[r][c] = true;
+            } else {
+                for(let dy=-3; dy<=3; dy++) {
+                    for(let dx=-3; dx<=3; dx++) {
+                        let tx = p1.x+dx, ty = p1.y+dy;
+                        if(tx>=0 && tx<COLS && ty>=0 && ty<ROWS) {
+                            let isWallBlock = false;
+                            let steps = Math.max(Math.abs(dx), Math.abs(dy));
+                            for(let i = 1; i <= steps; i++) {
+                                let cx = Math.round(p1.x + dx * (i / steps));
+                                let cy = Math.round(p1.y + dy * (i / steps));
+                                
+                                if ((cx !== tx || cy !== ty) && 
+                                    (grid[cy][cx] === 1 || tempWalls.some(w => w.active && w.x === cx && w.y === cy))) {
+                                    isWallBlock = true;
+                                    break;
+                                }
+                            }
+                            if(!isWallBlock) vis[ty][tx] = true;
+                        }
+                    }
+                }
+                vis[p1.y][p1.x] = true;
+            }
+        }
+
+        for(let r=0; r<ROWS; r++) {
+            for(let c=0; c<COLS; c++) {
+                let el = document.getElementById(`c-${c}-${r}`);
+                el.className = 'cell';
+                
+                // 【重點修改】出口無論如何都顯示，而且不會被 fog 蓋掉！
+                if(grid[r][c] === 3) {
+                    el.classList.add('exit');
+                } else if(!vis[r][c]) {
+                    el.classList.add('fog'); 
+                    continue; // 不是出口且在視野外，才加上黑霧
+                } else {
+                    if(grid[r][c] === 1) el.classList.add('wall');
+                }
+
+                if(tempWalls.some(w=>w.x===c && w.y===r && w.active)) el.classList.add('temp-wall');
+                
+                if(traps.some(t=>t.x===c && t.y===r && (t.owner===myRole || p1.isGod))) { el.classList.add('trap'); }
+                if(triggeredTraps.some(t=>t.x===c && t.y===r)) { el.classList.add('trap-triggered'); }
+                
+                if(p1Portals.some(p=>p.x===c && p.y===r)) el.classList.add('portal-p1');
+                if(p2Portals.some(p=>p.x===c && p.y===r) && (p1.isGod || gameMode==='test')) el.classList.add('portal-p2');
+            }
+        }
+
+        const d1 = document.getElementById('p1'); 
+        d1.style.left = `calc(${p1.x} * var(--cell-size))`; 
+        d1.style.top = `calc(${p1.y} * var(--cell-size))`;
+        
+        const d2 = document.getElementById('p2'); 
+        d2.style.left = `calc(${p2.x} * var(--cell-size))`; 
+        d2.style.top = `calc(${p2.y} * var(--cell-size))`;
+        d2.style.display = (vis[p2.y][p2.x] || p1.isGod || gameMode==='test') ? 'block' : 'none';
+    }
 </script>
+
 </body>
 </html>
 
