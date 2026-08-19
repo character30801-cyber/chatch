@@ -32,8 +32,8 @@
     button:disabled { background: #7f8c8d; cursor: not-allowed; transform: none; }
 
     .lobby-box { background: #2f3640; padding: 20px; border-radius: 8px; margin: 15px 0; text-align: left; }
-    .room-id-display { font-size: 24px; font-weight: bold; color: #f1c40f; letter-spacing: 2px; user-select: all; background: #1e272e; padding: 8px; border-radius: 4px; text-align: center; margin: 10px 0; }
-    input[type="text"] { width: 100%; padding: 10px; font-size: 16px; border-radius: 6px; border: 1px solid #718093; background: #1e272e; color: #fff; margin-top: 8px; text-align: center; }
+    .room-id-display { font-size: 32px; font-weight: bold; color: #f1c40f; letter-spacing: 4px; user-select: all; background: #1e272e; padding: 10px; border-radius: 6px; text-align: center; margin: 10px 0; border: 1px dashed #f1c40f; }
+    input[type="text"] { width: 100%; padding: 12px; font-size: 18px; border-radius: 6px; border: 1px solid #718093; background: #1e272e; color: #fff; margin-top: 8px; text-align: center; text-transform: lowercase; }
 
     .ability-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-bottom: 20px; }
     .ability-card { background: #2f3640; padding: 15px 10px; border-radius: 8px; cursor: pointer; border: 2px solid transparent; font-size: 15px; font-weight: bold; transition: 0.1s;}
@@ -78,18 +78,18 @@
 <div id="app">
     <!-- 主頁面：連線大廳 -->
     <div id="screen-main" class="screen active">
-        <h1>迷宮大逃殺 (雙人連線)</h1>
-        <p class="subtitle">即時 P2P 連線遊戲，輸入代碼即可進行對決！</p>
+        <h1>迷宮大逃殺 (短房號版)</h1>
+        <p class="subtitle">即時 P2P 連線遊戲，輸入 4 位數代碼即可對決！</p>
         
         <div class="lobby-box">
-            <p style="margin:0 0 5px 0;"><b>連線狀態：</b><span id="conn-status" style="color:#e67e22;">連線中...</span></p>
+            <p style="margin:0 0 5px 0;"><b>連線狀態：</b><span id="conn-status" style="color:#e67e22;">產生房間中...</span></p>
             <p style="margin:10px 0 0 0;">你的房間代碼：</p>
-            <div id="my-peer-id" class="room-id-display">產生中...</div>
+            <div id="my-peer-id" class="room-id-display">...</div>
         </div>
 
         <div class="lobby-box">
             <p style="margin:0;"><b>加入朋友的房間：</b></p>
-            <input type="text" id="join-id-input" placeholder="貼上房東的代碼">
+            <input type="text" id="join-id-input" placeholder="輸入 4 位數代碼" maxlength="4">
             <button onclick="joinRoom()" style="width:100%; margin-top:10px; background:#2980b9;">加入對局</button>
         </div>
     </div>
@@ -139,16 +139,19 @@
 
 <script>
 // ==========================================
-// 🌐 PeerJS 網路連線模組
+// 🌐 PeerJS 網路連線模組 (4位數短號版)
 // ==========================================
 let peer = null;
 let conn = null;
-let isHost = false; // 是否為房東 (房東負責運算地圖與狀態)
-let myRole = '';    // 'human' 或 'ghost'
+let isHost = false;
+let myRole = '';
 let isOpponentReady = false;
 
 function initPeer() {
-    peer = new Peer();
+    // 產生 4 位數隨機短號 (例如: a8k2)
+    const shortId = Math.random().toString(36).substring(2, 6);
+    
+    peer = new Peer(shortId);
 
     peer.on('open', (id) => {
         document.getElementById('my-peer-id').innerText = id;
@@ -156,22 +159,27 @@ function initPeer() {
         document.getElementById('conn-status').style.color = '#2ecc71';
     });
 
-    // 當有人連進來（房東端）
+    peer.on('error', (err) => {
+        if (err.type === 'unavailable-id') {
+            initPeer(); // 代碼重複時自動刷新重新產生
+        }
+    });
+
     peer.on('connection', (c) => {
         conn = c;
         isHost = true;
-        myRole = 'human'; // 房東預設為人類
+        myRole = 'human';
         setupConnection();
     });
 }
 
 function joinRoom() {
-    let hostId = document.getElementById('join-id-input').value.trim();
-    if (!hostId) { alert("請輸入對方的房間代碼！"); return; }
+    let hostId = document.getElementById('join-id-input').value.trim().toLowerCase();
+    if (!hostId || hostId.length !== 4) { alert("請輸入正確的 4 位數代碼！"); return; }
     
     conn = peer.connect(hostId);
     isHost = false;
-    myRole = 'ghost'; // 客人預設為惡鬼
+    myRole = 'ghost';
     setupConnection();
 }
 
@@ -182,7 +190,6 @@ function setupConnection() {
         switchScreen('screen-abilities');
     });
 
-    // 收到網路訊息
     conn.on('data', (data) => {
         handleNetworkData(data);
     });
@@ -223,13 +230,12 @@ function handleNetworkData(data) {
 initPeer();
 
 // ==========================================
-// ⚙️ 遊戲參數與狀態變數
+// ⚙️ 遊戲參數與邏輯
 // ==========================================
 const CONFIG = {
     MAP_SIZE: 15, TOTAL_TIME: 120, EXIT_TIME_LEFT: 30,
     HUMAN_BASE_SPEED: 270, GHOST_BASE_SPEED: 260, SPEED_BUFF_VALUE: 185,
-    VISION_RANGE: 3,
-    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000, decoyLife: 2000 },
+    DURATION: { trapRoot: 2000, godview: 2000, speed: 3000, obstacle: 4000 },
     CD: { trap: 30000, godview: 40000, wallhack: 30000, speed: 20000, obstacle: 30000, decoy: 30000 }
 };
 
@@ -240,7 +246,7 @@ let grid = [], fogGrid = [];
 let selectedAbilities = [];
 let gameInterval, logicInterval;
 let timeLeft = CONFIG.TOTAL_TIME;
-let exitsSpawned = false, isGameOver = false;
+let isGameOver = false;
 
 let human = { x: 0, y: 0, speed: CONFIG.HUMAN_BASE_SPEED, cooldown: 0, rooted: 0 };
 let ghost = { x: SIZE-1, y: SIZE-1, speed: CONFIG.GHOST_BASE_SPEED, cooldown: 0, rooted: 0 };
@@ -253,9 +259,6 @@ let abilitiesState = {
     ghost: { godviewTime: 0, speedTime: 0, wallhackReady: false, cds: {} }
 };
 
-// ==========================================
-// 🕹️ 移動與輸入控制
-// ==========================================
 window.addEventListener('keydown', (e) => {
     if (isGameOver || currentScreen !== 'screen-game') return;
     let k = e.key.toLowerCase();
@@ -305,9 +308,6 @@ function attemptMove(entity, dx, dy, role) {
     entity.x = nx; entity.y = ny; entity.cooldown = entity.speed;
 }
 
-// ==========================================
-// ⚙️ 遊戲主邏輯（僅房東執行，並同步給客人）
-// ==========================================
 function gameLogicTick() {
     if (!isHost || isGameOver) return;
     let tick = 15;
@@ -317,7 +317,6 @@ function gameLogicTick() {
     checkPendingPlacement('human');
     checkPendingPlacement('ghost');
 
-    // 更新障礙物
     for (let i = tempWalls.length - 1; i >= 0; i--) {
         tempWalls[i].timeLeft -= tick;
         if (tempWalls[i].timeLeft <= 0) {
@@ -326,10 +325,8 @@ function gameLogicTick() {
         }
     }
 
-    // 觸發陷阱檢查
     checkTrapsTrigger();
 
-    // 勝負判定
     if (human.x === ghost.x && human.y === ghost.y && ghost.rooted <= 0) {
         endGame('ghost_win', '惡鬼成功捕捉了人類！');
         return;
@@ -339,27 +336,18 @@ function gameLogicTick() {
         return;
     }
 
-    // 廣播最新遊戲狀態給客人
     broadcastState();
     updateVision(); render(); updateUI();
 }
 
 function broadcastState() {
-    sendNet('GAME_STATE', {
-        grid, human, ghost, traps, tempWalls, decoys, timeLeft, abilitiesState
-    });
+    sendNet('GAME_STATE', { grid, human, ghost, traps, tempWalls, decoys, timeLeft, abilitiesState });
 }
 
 function syncGameState(state) {
-    grid = state.grid;
-    human = state.human;
-    ghost = state.ghost;
-    traps = state.traps;
-    tempWalls = state.tempWalls;
-    decoys = state.decoys;
-    timeLeft = state.timeLeft;
-    abilitiesState = state.abilitiesState;
-
+    grid = state.grid; human = state.human; ghost = state.ghost;
+    traps = state.traps; tempWalls = state.tempWalls; decoys = state.decoys;
+    timeLeft = state.timeLeft; abilitiesState = state.abilitiesState;
     updateVision(); render(); updateUI();
 }
 
@@ -371,9 +359,6 @@ function endGame(winner, reason) {
     sendNet('GAME_OVER', { outcome: outcomeClient, reason });
 }
 
-// ==========================================
-// 🛠️ 輔助邏輯與介面
-// ==========================================
 function updateEntityTick(entity, tick, role) {
     if(entity.cooldown > 0) entity.cooldown -= tick;
     if(entity.rooted > 0) entity.rooted -= tick;
@@ -431,25 +416,16 @@ function playerReady() {
     document.getElementById('btn-ready').disabled = true;
     document.getElementById('btn-ready').innerText = "等待對手準備...";
     
-    if (isHost) {
-        checkAllReady();
-    } else {
-        sendNet('READY', true);
-    }
+    if (isHost) checkAllReady();
+    else sendNet('READY', true);
 }
 
 function checkAllReady() {
-    if (isHost && isOpponentReady && selectedAbilities.length === 2) {
-        startGame();
-    }
+    if (isHost && isOpponentReady && selectedAbilities.length === 2) startGame();
 }
 
 function startGame() {
-    generateMaze();
-    dynamicRenderInit();
-    setupUI();
-    switchScreen('screen-game');
-    
+    generateMaze(); dynamicRenderInit(); setupUI(); switchScreen('screen-game');
     gameInterval = setInterval(() => {
         if (!isHost) return;
         timeLeft--;
@@ -594,4 +570,5 @@ function triggerGameOver(outcome, msg) {
 </script>
 </body>
 </html>
+
 
