@@ -7,7 +7,6 @@
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
         :root { 
-            /* 【重點修改】地圖基礎大小與最大值大幅提升，讓畫面更大！ */
             --cell-size: clamp(24px, 5.5vh, 45px); 
             --grid-w: 20;
             --grid-h: 15;
@@ -48,7 +47,7 @@
 
         #game-screen { 
             display: none; flex-direction: row; gap: 20px; align-items: stretch;
-            justify-content: center; flex-wrap: wrap; /* 支援大畫面排版 */
+            justify-content: center; flex-wrap: wrap;
             height: calc(var(--cell-size) * var(--grid-h) + 8px); 
         }
         #board { 
@@ -86,8 +85,9 @@
         .fog { background-color: #080808 !important; border: none !important; z-index: 15; }
         .wall { background-color: #2c3e50; border: 1px solid #1a252f; }
         .temp-wall { background-color: #7f8c8d; border: 1px dashed #fff; z-index: 2;}
-        .trap { background-color: rgba(142, 68, 173, 0.6); border-radius: 4px; z-index: 1;}
+        .wall-passable { background-color: #2ecc71 !important; box-shadow: 0 0 12px #2ecc71; z-index: 5; }
         
+        .trap { background-color: rgba(142, 68, 173, 0.6); border-radius: 4px; z-index: 1;}
         .trap-triggered { animation: trap-triggered-flash 0.25s infinite alternate; z-index: 25 !important; }
         @keyframes trap-triggered-flash { 0% { background-color: rgba(142,68,173,1); } 100% { background-color: #f1c40f; } }
         
@@ -128,12 +128,11 @@
 
 能力:
 1. 陷阱：可將空格變陷阱（無上限），踩中定身2秒，發動者免疫。觸發時該格會閃爍2秒提醒。CD: 20s
-2. 上帝視角：觀看全圖2秒，看到雙方位置與陷阱。CD: 20s
-3. 穿牆：可穿越單層牆壁或障礙物。CD: 20s
-4. 加速：速度變快，持續3秒。CD: 10s
-5. 障礙物：前方一格暫時變牆壁，持續3秒。CD: 20s
-6. 傳送門：設定最多2個傳送門進行雙向傳送（對手無法傳送）。CD: 20s
-7. 迷霧：將對手視野全黑持續2秒；若對方剛好開上帝視角則直接反制使其什麼都看不到。CD: 25s</pre>
+2. 上帝視角：觀看全圖2秒，看到雙方位置與陷阱。CD: 30s
+3. 穿牆：可穿越單層牆壁或障礙物（發動時可穿越的牆壁會亮綠光）。CD: 20s
+4. 加速：速度變快，持續2秒。CD: 10s
+5. 障礙物：前方一格暫時變牆壁，持續4秒。CD: 20s
+6. 傳送門：設定最多2個傳送門進行雙向傳送（對手無法傳送，使用1次後消失）。CD: 20s</pre>
         </div>
     </div>
 
@@ -164,12 +163,11 @@
         <h2 id="role-announce" style="margin-top:0;"></h2>
         <div class="ability-grid">
             <div class="ability-card" onclick="selectAbi('trap', this)">1. 陷阱<small><br>(無上限, CD:20s)</small></div>
-            <div class="ability-card" onclick="selectAbi('godview', this)">2. 上帝視角<small><br>(CD: 20s)</small></div>
+            <div class="ability-card" onclick="selectAbi('godview', this)">2. 上帝視角<small><br>(CD: 30s)</small></div>
             <div class="ability-card" onclick="selectAbi('wallhack', this)">3. 穿牆<small><br>(CD: 20s)</small></div>
             <div class="ability-card" onclick="selectAbi('speed', this)">4. 加速<small><br>(CD: 10s)</small></div>
             <div class="ability-card" onclick="selectAbi('obstacle', this)">5. 障礙物<small><br>(CD: 20s)</small></div>
             <div class="ability-card" onclick="selectAbi('portal', this)">6. 傳送門<small><br>(CD: 20s)</small></div>
-            <div class="ability-card" onclick="selectAbi('fog', this)" style="grid-column: span 2;">7. 迷霧<small> (盲化對手2秒 / 剋制上帝視角, CD: 25s)</small></div>
         </div>
         <button id="ready-btn" class="menu-btn" onclick="playerReady()">確認準備</button>
         <p id="ready-status" style="color:#f1c40f; margin-top:10px;"></p>
@@ -208,8 +206,8 @@
 
 <script>
     // --- 遊戲資料字典 ---
-    const ABI_DICT = { 'trap':'陷阱', 'godview':'上帝視角', 'wallhack':'穿牆', 'speed':'加速', 'obstacle':'障礙物', 'portal':'傳送門', 'fog':'迷霧' };
-    const CD_DICT = { 'trap':20000, 'godview':20000, 'wallhack':20000, 'speed':10000, 'obstacle':20000, 'portal':20000, 'fog':25000 };
+    const ABI_DICT = { 'trap':'陷阱', 'godview':'上帝視角', 'wallhack':'穿牆', 'speed':'加速', 'obstacle':'障礙物', 'portal':'傳送門' };
+    const CD_DICT = { 'trap':20000, 'godview':30000, 'wallhack':20000, 'speed':10000, 'obstacle':20000, 'portal':20000 };
     
     const COLS = 20, ROWS = 15;
     
@@ -217,8 +215,8 @@
     let grid = Array.from({length: ROWS}, () => Array(COLS).fill(0));
     let gameMode = ''; 
     let myRole = 'human', oppRole = 'ghost'; 
-    let p1 = { x:0, y:0, cd:0, rooted:0, speed:220, isGod:false, isFogged:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 }; 
-    let p2 = { x:COLS-1, y:ROWS-1, cd:0, rooted:0, speed:220, isGod:false, isFogged:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 };
+    let p1 = { x:0, y:0, cd:0, rooted:0, speed:220, isGod:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 }; 
+    let p2 = { x:COLS-1, y:ROWS-1, cd:0, rooted:0, speed:220, isGod:false, wallBuff:false, teleportCd:0, trapCharges:1, trapCd:0 };
     
     let traps = [], tempWalls = [], triggeredTraps = [];
     let p1Portals = [], p2Portals = []; 
@@ -498,8 +496,8 @@
         document.getElementById('role-tag').innerText = myRole === 'human' ? '陣營：人類 (藍)' : '陣營：惡鬼 (紅)';
         navState = 'game'; 
         
-        p1.trapCharges = 1; p1.trapCd = 0; p1.isFogged = false;
-        p2.trapCharges = 1; p2.trapCd = 0; p2.isFogged = false;
+        p1.trapCharges = 1; p1.trapCd = 0;
+        p2.trapCharges = 1; p2.trapCd = 0;
         p1Portals = []; p2Portals = [];
 
         const name1 = ABI_DICT[mySkills[0]] || "未選擇";
@@ -549,7 +547,6 @@
         if(p1.teleportCd > 0) p1.teleportCd -= 15;
         if(p2.teleportCd > 0) p2.teleportCd -= 15;
 
-        // 【修改】陷阱無上限，直接無腦加
         if (mySkills.includes('trap')) {
             p1.trapCd += 15;
             if (p1.trapCd >= 20000) { p1.trapCharges++; p1.trapCd = 0; showMsg(`陷阱次數 +1 (現有: ${p1.trapCharges})`); }
@@ -625,14 +622,18 @@
 
     function checkPortals(playerObj, portalArr) {
         if(portalArr.length === 2 && playerObj.teleportCd <= 0) {
-            if(playerObj.x === portalArr[0].x && playerObj.y === portalArr[0].y) {
-                playerObj.x = portalArr[1].x; playerObj.y = portalArr[1].y;
+            if((playerObj.x === portalArr[0].x && playerObj.y === portalArr[0].y) || 
+               (playerObj.x === portalArr[1].x && playerObj.y === portalArr[1].y)) {
+                let target = (playerObj.x === portalArr[0].x && playerObj.y === portalArr[0].y) ? portalArr[1] : portalArr[0];
+                playerObj.x = target.x; 
+                playerObj.y = target.y;
                 playerObj.teleportCd = 1000;
-                if(playerObj === p1) { showMsg('通過傳送門！'); if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted}); }
-            } else if(playerObj.x === portalArr[1].x && playerObj.y === portalArr[1].y) {
-                playerObj.x = portalArr[0].x; playerObj.y = portalArr[0].y;
-                playerObj.teleportCd = 1000;
-                if(playerObj === p1) { showMsg('通過傳送門！'); if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted}); }
+                portalArr.length = 0; // 傳送門只能使用一次，傳送後消失
+                if(playerObj === p1) { 
+                    showMsg('通過傳送門 (門已消失)！'); 
+                    if(gameMode==='p2p') conn.send({type:'MOVE', x:p1.x, y:p1.y, rooted:p1.rooted}); 
+                }
+                syncObjs();
             }
         }
     }
@@ -800,8 +801,8 @@
             if(playerObj === p1) showMsg(`陷阱已放置！(剩餘次數: ${playerObj.trapCharges})`);
         } else if(sk === 'obstacle') {
             if(grid[playerObj.y][playerObj.x] === 3) return false;
-            tempWalls.push({x:playerObj.x, y:playerObj.y, owner:role, active:false, timeLeft:3000}); 
-            if(playerObj === p1) showMsg('障礙物已生成！離開後生效。');
+            tempWalls.push({x:playerObj.x, y:playerObj.y, owner:role, active:false, timeLeft:4000}); 
+            if(playerObj === p1) showMsg('障礙物已生成！離開後生效 (持續4秒)。');
         } else if(sk === 'portal') {
             let pArr = playerObj === p1 ? p1Portals : p2Portals;
             if(pArr.length < 2) {
@@ -813,37 +814,26 @@
                 if(playerObj === p1) showMsg('傳送門位置已更新！');
             }
         } else if(sk === 'speed') {
-            playerObj.speed = 90; setTimeout(()=> playerObj.speed = role==='human'?230:190, 3000); 
-            if(playerObj === p1) showMsg('加速啟動！');
+            playerObj.speed = 90; setTimeout(()=> playerObj.speed = role==='human'?230:190, 2000); 
+            if(playerObj === p1) showMsg('加速啟動 (持續2秒)！');
         } else if(sk === 'godview') {
             playerObj.isGod = true; setTimeout(()=> playerObj.isGod = false, 2000); 
             if(playerObj === p1) showMsg('上帝視角啟動！');
         } else if(sk === 'wallhack') {
             playerObj.wallBuff = true; 
             if(playerObj === p1) showMsg('穿牆就緒！請往牆壁或障礙物移動。'); 
-        } else if(sk === 'fog') {
-            let opponent = (playerObj === p1) ? p2 : p1;
-            opponent.isFogged = true;
-            if(opponent.isGod) opponent.isGod = false; 
-            setTimeout(() => opponent.isFogged = false, 2000);
-            if(playerObj === p1) showMsg('迷霧施放！對手視野已被遮蔽！');
         }
         return success;
     }
 
     function triggerOpponentSkill(sk, x, y) {
         if(sk==='trap') traps.push({x:x, y:y, owner:oppRole, active:false});
-        if(sk==='obstacle') tempWalls.push({x:x, y:y, owner:oppRole, active:false, timeLeft:3000});
+        if(sk==='obstacle') tempWalls.push({x:x, y:y, owner:oppRole, active:false, timeLeft:4000});
         if(sk==='portal') {
             if(p2Portals.length < 2) p2Portals.push({x:x, y:y});
             else { p2Portals[0] = p2Portals[1]; p2Portals[1] = {x:x, y:y}; }
         }
-        if(sk==='speed') { p2.speed=90; setTimeout(()=>p2.speed=oppRole==='human'?230:190, 3000); }
-        if(sk==='fog') {
-            p1.isFogged = true;
-            if(p1.isGod) p1.isGod = false;
-            setTimeout(() => p1.isFogged = false, 2000);
-        }
+        if(sk==='speed') { p2.speed=90; setTimeout(()=>p2.speed=oppRole==='human'?230:190, 2000); }
         showMsg(`對手發動了 【${ABI_DICT[sk]}】！`);
     }
 
@@ -962,50 +952,59 @@
     function render() {
         let vis = Array.from({length: ROWS}, () => Array(COLS).fill(false));
         
-        if(!p1.isFogged) {
-            if(p1.isGod || gameMode==='test') {
-                for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) vis[r][c] = true;
-            } else {
-                for(let dy=-3; dy<=3; dy++) {
-                    for(let dx=-3; dx<=3; dx++) {
-                        let tx = p1.x+dx, ty = p1.y+dy;
-                        if(tx>=0 && tx<COLS && ty>=0 && ty<ROWS) {
-                            let isWallBlock = false;
-                            let steps = Math.max(Math.abs(dx), Math.abs(dy));
-                            for(let i = 1; i <= steps; i++) {
-                                let cx = Math.round(p1.x + dx * (i / steps));
-                                let cy = Math.round(p1.y + dy * (i / steps));
-                                
-                                if ((cx !== tx || cy !== ty) && 
-                                    (grid[cy][cx] === 1 || tempWalls.some(w => w.active && w.x === cx && w.y === cy))) {
-                                    isWallBlock = true;
-                                    break;
-                                }
+        if(p1.isGod || gameMode==='test') {
+            for(let r=0; r<ROWS; r++) for(let c=0; c<COLS; c++) vis[r][c] = true;
+        } else {
+            for(let dy=-3; dy<=3; dy++) {
+                for(let dx=-3; dx<=3; dx++) {
+                    let tx = p1.x+dx, ty = p1.y+dy;
+                    if(tx>=0 && tx<COLS && ty>=0 && ty<ROWS) {
+                        let isWallBlock = false;
+                        let steps = Math.max(Math.abs(dx), Math.abs(dy));
+                        for(let i = 1; i <= steps; i++) {
+                            let cx = Math.round(p1.x + dx * (i / steps));
+                            let cy = Math.round(p1.y + dy * (i / steps));
+                            
+                            if ((cx !== tx || cy !== ty) && 
+                                (grid[cy][cx] === 1 || tempWalls.some(w => w.active && w.x === cx && w.y === cy))) {
+                                isWallBlock = true;
+                                break;
                             }
-                            if(!isWallBlock) vis[ty][tx] = true;
                         }
+                        if(!isWallBlock) vis[ty][tx] = true;
                     }
                 }
-                vis[p1.y][p1.x] = true;
             }
+            vis[p1.y][p1.x] = true;
         }
+
+        let canWallhack = p1.wallBuff || (gameMode === 'test' && p2.wallBuff);
 
         for(let r=0; r<ROWS; r++) {
             for(let c=0; c<COLS; c++) {
                 let el = document.getElementById(`c-${c}-${r}`);
                 el.className = 'cell';
                 
-                // 【重點修改】出口無論如何都顯示，而且不會被 fog 蓋掉！
                 if(grid[r][c] === 3) {
                     el.classList.add('exit');
                 } else if(!vis[r][c]) {
                     el.classList.add('fog'); 
-                    continue; // 不是出口且在視野外，才加上黑霧
+                    continue;
                 } else {
                     if(grid[r][c] === 1) el.classList.add('wall');
                 }
 
                 if(tempWalls.some(w=>w.x===c && w.y===r && w.active)) el.classList.add('temp-wall');
+
+                // 穿牆綠光提示 (偵測單層牆壁/障礙物)
+                if(canWallhack) {
+                    let isWallCell = (grid[r][c] === 1) || tempWalls.some(w=>w.x===c && w.y===r && w.active);
+                    if(isWallCell) {
+                        let hPassable = isWalkable(c - 1, r) && isWalkable(c + 1, r);
+                        let vPassable = isWalkable(c, r - 1) && isWalkable(c, r + 1);
+                        if(hPassable || vPassable) el.classList.add('wall-passable');
+                    }
+                }
                 
                 if(traps.some(t=>t.x===c && t.y===r && (t.owner===myRole || p1.isGod))) { el.classList.add('trap'); }
                 if(triggeredTraps.some(t=>t.x===c && t.y===r)) { el.classList.add('trap-triggered'); }
@@ -1028,5 +1027,3 @@
 
 </body>
 </html>
-
-
