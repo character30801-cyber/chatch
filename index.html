@@ -85,7 +85,20 @@
         .fog { background-color: #080808 !important; border: none !important; z-index: 15; }
         .wall { background-color: #2c3e50; border: 1px solid #1a252f; }
         .temp-wall { background-color: #7f8c8d; border: 1px dashed #fff; z-index: 2;}
-        .wall-passable { background-color: #2ecc71 !important; box-shadow: 0 0 12px #2ecc71; z-index: 5; }
+
+        /* 💡 可穿牆高亮提示樣式 (精準判定與呼吸燈動畫) */
+        .wall-passable {
+            background-color: #27ae60 !important;      
+            border: 2px solid #2ecc71 !important;        
+            box-shadow: 0 0 12px #2ecc71, inset 0 0 8px #2ecc71 !important; 
+            animation: wallhack-pulse 0.6s infinite alternate !important; 
+            z-index: 5 !important;
+        }
+
+        @keyframes wallhack-pulse {
+            from { opacity: 0.7; box-shadow: 0 0 6px #2ecc71, inset 0 0 4px #2ecc71; }
+            to { opacity: 1; box-shadow: 0 0 15px #2ecc71, inset 0 0 10px #2ecc71; }
+        }
         
         .trap { background-color: rgba(142, 68, 173, 0.6); border-radius: 4px; z-index: 1;}
         .trap-triggered { animation: trap-triggered-flash 0.25s infinite alternate; z-index: 25 !important; }
@@ -978,7 +991,29 @@
             vis[p1.y][p1.x] = true;
         }
 
-        let canWallhack = p1.wallBuff || (gameMode === 'test' && p2.wallBuff);
+        // 計算目前玩家周圍「實際可被穿越」的牆面座標
+        let passableWalls = [];
+        let dirs = [[0,1], [0,-1], [1,0], [-1,0]];
+
+        // 判定 P1 可穿牆座標
+        if (p1.wallBuff) {
+            for (let [dx, dy] of dirs) {
+                let wx = p1.x + dx, wy = p1.y + dy;
+                let nx = p1.x + dx * 2, ny = p1.y + dy * 2;
+                let isWall = (wy >= 0 && wy < ROWS && wx >= 0 && wx < COLS && grid[wy][wx] === 1) || tempWalls.some(w => w.active && w.x === wx && w.y === wy);
+                if (isWall && isWalkable(nx, ny)) passableWalls.push({ x: wx, y: wy });
+            }
+        }
+
+        // 判定 P2 可穿牆座標 (單機雙控測試用)
+        if (gameMode === 'test' && p2.wallBuff) {
+            for (let [dx, dy] of dirs) {
+                let wx = p2.x + dx, wy = p2.y + dy;
+                let nx = p2.x + dx * 2, ny = p2.y + dy * 2;
+                let isWall = (wy >= 0 && wy < ROWS && wx >= 0 && wx < COLS && grid[wy][wx] === 1) || tempWalls.some(w => w.active && w.x === wx && w.y === wy);
+                if (isWall && isWalkable(nx, ny)) passableWalls.push({ x: wx, y: wy });
+            }
+        }
 
         for(let r=0; r<ROWS; r++) {
             for(let c=0; c<COLS; c++) {
@@ -996,14 +1031,9 @@
 
                 if(tempWalls.some(w=>w.x===c && w.y===r && w.active)) el.classList.add('temp-wall');
 
-                // 穿牆綠光提示 (偵測單層牆壁/障礙物)
-                if(canWallhack) {
-                    let isWallCell = (grid[r][c] === 1) || tempWalls.some(w=>w.x===c && w.y===r && w.active);
-                    if(isWallCell) {
-                        let hPassable = isWalkable(c - 1, r) && isWalkable(c + 1, r);
-                        let vPassable = isWalkable(c, r - 1) && isWalkable(c, r + 1);
-                        if(hPassable || vPassable) el.classList.add('wall-passable');
-                    }
+                // 穿牆綠光提示 (精準顯示玩家周圍可穿越的牆面)
+                if (passableWalls.some(w => w.x === c && w.y === r)) {
+                    el.classList.add('wall-passable');
                 }
                 
                 if(traps.some(t=>t.x===c && t.y===r && (t.owner===myRole || p1.isGod))) { el.classList.add('trap'); }
@@ -1027,3 +1057,5 @@
 
 </body>
 </html>
+
+
